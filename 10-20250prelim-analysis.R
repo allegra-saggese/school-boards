@@ -4,6 +4,7 @@ library(readxl)
 library(dplyr)
 library(labelled)
 library(purrr)
+library(knitr)
 
 
 ########## LOAD IN RAW DATA ###############
@@ -52,6 +53,11 @@ print(description_cols)
 
 census_clean <- census_short_2[-1, ] # drop the first naming row from excel 
 pre_col_list <-colnames(census_clean)
+
+
+str(census_clean)
+census_clean <- census_clean %>%
+  mutate(across(starts_with("S2301"), ~ as.numeric(as.character(.))))
 
 # label vars 
 census_clean <- set_variable_labels(census_clean,
@@ -177,3 +183,71 @@ colnames(merged_bea)
 merged_bea <- merged_bea %>% select(-year.df1, -year.df2)
 
 df_full <- census_clean %>% full_join(merged_bea, by = c("county", "state"))
+
+
+
+############ REGRESSION ANALYSIS ####################
+
+model_v1 <- lm(S2301_C02_023E ~ log(per_capita_income), data = df_full)
+summary(model_v1)
+
+
+model_v2 <- lm(S2301_C02_023E ~ log(per_capita_income) + I(log(per_capita_income)^2),
+               data = df_full)
+summary(model_v2)
+
+
+# plot the basic u-curve at the county level 
+plot1 <- plot(log(df_full$per_capita_income), df_full$S2301_C02_023E,
+     xlab = "log(per capita income)", ylab = "Labor Force Participation Rate")
+curve(coef(model_v2)[1] + coef(model_v2)[2]*x + coef(model_v2)[3]*x^2,
+      add = TRUE, col = "red", lwd = 2)
+
+# now interrogate the data (summary stats, data type)
+stats_table <- df_full %>%
+  summarise(
+    Mean_LFPR = mean(S2301_C02_023E, na.rm = TRUE),
+    Median_LFPR = median(S2301_C02_023E, na.rm = TRUE),
+    Mode_LFPR = as.numeric(names(sort(table(S2301_C02_023E), decreasing = TRUE)[1])),
+    Range_LFPR = diff(range(S2301_C02_023E, na.rm = TRUE)),
+    Mean_Income = mean(per_capita_income, na.rm = TRUE),
+    Median_Income = median(per_capita_income, na.rm = TRUE),
+    Mode_Income = as.numeric(names(sort(table(per_capita_income), decreasing = TRUE)[1])),
+    Range_Income = diff(range(per_capita_income, na.rm = TRUE))
+  )
+
+kable(stats_table, digits = 2, caption = "Summary Statistics")
+ 
+# trimming extrema 
+df_full_v2 <- df_full %>%
+  filter(S2301_C02_023E <= quantile(S2301_C02_023E, 0.99, na.rm = TRUE),
+         per_capita_income <= quantile(per_capita_income, 0.99, na.rm = TRUE))
+
+# rerun the log and log^2 specification of the u-curve reg
+model_v3 <- lm(S2301_C02_023E ~ log(per_capita_income) + I(log(per_capita_income)^2),
+               data = df_full_v2)
+summary(model_v3)
+
+plot2 <- plot(log(df_full_v2$per_capita_income), df_full_v2$S2301_C02_023E,
+     xlab = "log(per capita income)", ylab = "Labor Force Participation Rate")
+curve(coef(model_v3)[1] + coef(model_v3)[2]*x + coef(model_v3)[3]*x^2,
+      add = TRUE, col = "pink", lwd = 2)
+
+#further trim 
+df_full_v3 <- df_full %>%
+  filter(S2301_C02_023E <= quantile(S2301_C02_023E, 0.995, na.rm = TRUE),
+         per_capita_income <= quantile(per_capita_income, 0.995, na.rm = TRUE))
+
+model_v4 <- lm(S2301_C02_023E ~ log(per_capita_income) + I(log(per_capita_income)^2),
+               data = df_full_v3)
+summary(model_v4)
+
+plot3 <- plot(log(df_full_v3$per_capita_income), df_full_v3$S2301_C02_023E,
+              xlab = "log(per capita income)", ylab = "Labor Force Participation Rate")
+curve(coef(model_v4)[1] + coef(model_v4)[2]*x + coef(model_v4)[3]*x^2,
+      add = TRUE, col = "orange", lwd = 2)
+
+###### ADDING DEMOGRAPHIC DATA 
+
+
+
