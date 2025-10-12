@@ -247,7 +247,111 @@ plot3 <- plot(log(df_full_v3$per_capita_income), df_full_v3$S2301_C02_023E,
 curve(coef(model_v4)[1] + coef(model_v4)[2]*x + coef(model_v4)[3]*x^2,
       add = TRUE, col = "orange", lwd = 2)
 
+
+# ROBUSTNESS CHECK - check against male LFPR 
+model_v4_MALE <- lm(S2301_C02_022E ~ log(per_capita_income) + I(log(per_capita_income)^2),
+               data = df_full_v3)
+summary(model_v4_MALE)
+
+plot3b <- plot(log(df_full_v3$per_capita_income), df_full_v3$S2301_C02_022E,
+              xlab = "log(per capita income)", ylab = "Labor Force Participation Rate (male)")
+curve(coef(model_v4_MALE)[1] + coef(model_v4_MALE)[2]*x + coef(model_v4_MALE)[3]*x^2,
+      add = TRUE, col = "blue", lwd = 2)
+# IT DOES HOLD FOR MALE - NOT GREAT 
+
+# check female - male 
+model_v4_FVM <- lm(I(S2301_C02_022E-S2301_C02_023E) ~ log(per_capita_income) + I(log(per_capita_income)^2),
+                    data = df_full_v3)
+summary(model_v4_FVM)
+
+plot3c <- plot(log(df_full_v3$per_capita_income), (df_full_v3$S2301_C02_022E - df_full_v3$S2301_C02_023E),
+              xlab = "log(per capita income)", ylab = "Labor Force Participation Rate (difference)")
+curve(coef(model_v4_FVM)[1] + coef(model_v4_FVM)[2]*x + coef(model_v4_FVM)[3]*x^2,
+      add = TRUE, col = "green", lwd = 2)
+# but against the difference, we see something - even though it is flat 
+
+# CALIFORNIA ONLY 
+df_CA <- subset(df_full_v3, state=="CALIFORNIA")
+
+# male v female in CA 
+model_v4_FVM_CA <- lm(I(S2301_C02_022E-S2301_C02_023E) ~ log(per_capita_income) + I(log(per_capita_income)^2),
+                   data = df_CA)
+summary(model_v4_FVM_CA)
+
+plotca1 <- plot(log(df_CA$per_capita_income), (df_CA$S2301_C02_022E - df_CA$S2301_C02_023E),
+               xlab = "log(per capita income)", ylab = "Labor Force Participation Rate (difference)")
+curve(coef(model_v4_FVM_CA)[1] + coef(model_v4_FVM_CA)[2]*x + coef(model_v4_FVM_CA)[3]*x^2,
+      add = TRUE, col = "blue", lwd = 2)
+
+# female only in CA 
+model_v3_CA <- lm(S2301_C02_023E ~ log(per_capita_income) + I(log(per_capita_income)^2),
+                      data = df_CA)
+summary(model_v3_CA)
+
+plotca2 <- plot(log(df_CA$per_capita_income), (df_CA$S2301_C02_023E),
+               xlab = "log(per capita income)", ylab = "Labor Force Participation Rate (female)")
+curve(coef(model_v3_CA)[1] + coef(model_v3_CA)[2]*x + coef(model_v3_CA)[3]*x^2,
+      add = TRUE, col = "blue", lwd = 2)
+
+# male only in CA 
+model_male_CA <- lm(S2301_C02_022E ~ log(per_capita_income) + I(log(per_capita_income)^2),
+                  data = df_CA)
+summary(model_male_CA)
+
+plotca2 <- plot(log(df_CA$per_capita_income), (df_CA$S2301_C02_022E),
+                xlab = "log(per capita income)", ylab = "Labor Force Participation Rate (male)")
+curve(coef(model_male_CA)[1] + coef(model_male_CA)[2]*x + coef(model_male_CA)[3]*x^2,
+      add = TRUE, col = "blue", lwd = 2)
+
+
+
+# STATE LOOP 
+states <- unique(df_full_v3$state)
+
+for(s in states) {
+  df_state <- subset(df_full_v3, state == s)
+  
+  model <- lm(I(S2301_C02_022E - S2301_C02_023E) ~ log(per_capita_income) + I(log(per_capita_income)^2),
+              data = df_state)
+  
+  print(paste("State:", s))
+  print(summary(model))
+  
+  plot(log(df_state$per_capita_income),
+       (df_state$S2301_C02_022E - df_state$S2301_C02_023E),
+       xlab = "log(per capita income)",
+       ylab = "Labor Force Participation Rate (difference)",
+       main = paste("State:", s))
+  
+  curve(coef(model)[1] + coef(model)[2]*x + coef(model)[3]*x^2,
+        add = TRUE, col = "red", lwd = 2)
+}
+
+
 ###### ADDING DEMOGRAPHIC DATA 
+census_demo_data = read.csv("/Users/allegrasaggese/Library/CloudStorage/Dropbox/Tradwives/data/Census-Demographics-bycounty.csv")
 
+census_demo_collapse <- census_demo_data %>%
+  mutate(AGEGRP = ifelse(AGEGRP == 0, 0, 1)) %>%
+  group_by(CTYNAME, STNAME, AGEGRP) %>%
+  summarise(across(where(is.numeric), sum, na.rm = TRUE), .groups = "drop")
 
+collapsed_2 <- census_demo_collapse  %>%
+  distinct(CTYNAME, STNAME, .keep_all = TRUE)
 
+collapsed_2 <- collapsed_2 %>%
+  rename(county = CTYNAME,
+         state = STNAME)
+
+collapsed_2 <- collapsed_2 %>%
+  mutate(
+    county = iconv(county, from = "", to = "UTF-8"),
+    state = iconv(state, from = "", to = "UTF-8"),
+    county = toupper(gsub(" County", "", trimws(county), ignore.case = TRUE)),
+    state = toupper(trimws(state))
+  )
+
+# merge on county / state 
+df_full_demo <- df_full_v3 %>% full_join(collapsed_2, by = c("county", "state"))
+
+##### WE HAVE POP BY DEMO (not LFPR)
