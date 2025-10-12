@@ -156,7 +156,7 @@ bea_Y_df_2_long <- bea_Y_df_1_long %>% filter(year == 2023)
 bea_Y_clean <- bea_Y_df_2_long[rowSums(is.na(bea_Y_df_2_long)) < 6, ] #no drops 
 
 rm(bea_Y_df, bea_Y_df_1_long, bea_Y_df, bea_Y_df_2, 
-   bea_Y_df_2_long, bea_Y_df_raw, bea_Y_state, df) # clean up interim DFs 
+   bea_Y_df_2_long, bea_Y_df_raw) # clean up interim DFs 
 
 
 ############### Merge data together (3 data sets) ###################
@@ -170,10 +170,10 @@ look <- bea_GDP_clean %>% distinct(county, state, .keep_all = TRUE)
 dup_keys <- bea_GDP_clean %>%
   count(county, state, sort = TRUE) %>%
   filter(n > 1)
+# AFTER QA --- NO DUPES! 
 
+colnames(merged_bea)
+# drop year indicator (all the same year)
+merged_bea <- merged_bea %>% select(-year.df1, -year.df2)
 
-merged <- bea_Y_clea %>%
-  full_join(look, by = c("county","state"), suffix = c(".df1",".df2"),
-            relationship = "many-to-one")
-
-
+df_full <- census_clean %>% full_join(merged_bea, by = c("county", "state"))
