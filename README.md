@@ -4,9 +4,9 @@
 
 ##### Project overview
 Economic analysis of culture and its impact on female labor force 
-participation rates in the US for high potential earners. We will
-use an IV approach with novel school board data to show current 
-culture effects economic decision making - beyond its functionality. 
+participation rates in the US for high potential earners. This data is a first attempt
+at generating stylized facts for individuals across incomes and understanding female 
+labor force participation over time in the country. 
 
 #### File structure 
 *Note: all files and coding is in progress - early stages*
@@ -32,3 +32,28 @@ culture effects economic decision making - beyond its functionality.
 - You can override paths via environment variables:
   - `SCHOOL_BOARDS_DATA_ROOT`
   - `SCHOOL_BOARDS_EXTERNAL_ROOT`
+
+#### Workflow
+1. Configure paths:
+   - Set `external_data_root` in `config.yml` to your Dropbox project root.
+   - Place external files under `<external_data_root>/data/`.
+2. Prepare IPUMS data:
+   - Run `ipmus-data-cleaning.R` to unzip GRF files and build the SQLite database.
+   - Output goes to `data/interim/ipums_data.sqlite`.
+3. Build county panel inputs:
+   - Run `fred-county-panel.R` (requires `FRED_API_KEY`) to download county series.
+   - Output goes to `data/processed/fred/`.
+4. Run preliminary analysis:
+   - Run `10-2025-prelim-analysis.R` to load Census/BEA data from Dropbox, clean, merge, and run regressions.
+   - Save any plots to `data/graphs/` (recommended convention).
+
+#### Expected external files
+Place these in `<external_data_root>/data/` (Dropbox):
+- `Census-ACSST5Y2023.S2301-Data.csv`
+- `BEA-county-per-capita-income.xlsx`
+- `BEA-county-per-capita-income_edited.xlsx`
+- `BEA-county-percapita-GDP.xlsx`
+- `BEA-county-percapita-GDP-edits.xlsx`
+- `data-zipped/` (GRF ZIP files)
+- `grf-unzipped/` (GRF unzipped files)
+- `ipums/` (IPUMS raw data files, including `usa_00001.xml`)
