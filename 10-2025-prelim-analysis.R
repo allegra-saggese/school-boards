@@ -9,16 +9,32 @@ library(R.utils)
 
 source("R/paths.R")
 
-########## LOAD IN RAW DATA ###############
+# Save plots directly to data/graphs with consistent image settings.
+save_plot <- function(filename, expr, width = 1800, height = 1200, res = 180) {
+  ensure_dir(graphs_dir())
+  out_file <- file.path(graphs_dir(), filename)
+  png(filename = out_file, width = width, height = height, res = res)
+  on.exit(dev.off(), add = TRUE)
+  eval.parent(substitute(expr))
+  invisible(out_file)
+}
+
+# =========================================================
+# 0) Setup and input files
+# Purpose: load all required source datasets.
+# =========================================================
+
+# quick check of current working directory (useful in interactive runs)
 getwd()
-# load census data 
+
+# ---------- Census labor force table ----------
 census_path <- ext_path("data", "Census-ACSST5Y2023.S2301-Data.csv")
 if (!file.exists(census_path)) {
   stop(paste("Census file not found:", census_path))
 }
 census_df = read.csv(census_path)
 
-# load BEA data 
+# ---------- BEA income table (raw + manually edited) ----------
 bea_income_path <- ext_path("data", "BEA-county-per-capita-income.xlsx")
 if (!file.exists(bea_income_path)) {
   stop(paste("BEA income file not found:", bea_income_path))
@@ -35,6 +51,7 @@ bea_Y_df = read_excel(bea_income_edits_path,
                       sheet = 1,
                       skip = 3)
 
+# ---------- BEA GDP table (raw + manually edited) ----------
 bea_gdp_path <- ext_path("data", "BEA-county-percapita-GDP.xlsx")
 if (!file.exists(bea_gdp_path)) {
   stop(paste("BEA GDP file not found:", bea_gdp_path))
@@ -51,12 +68,16 @@ bea_GDP_df = read_excel(bea_gdp_edits_path,
                         sheet = 1,
                         skip = 3)
 
-# read in election data (presidential data for left/right proxy)
-pres_df <- read.csv("/Users/allegrasaggese/Documents/GitHub/school-boards/data/countypres_2000-2024.csv")
+# ---------- Presidential county votes (left/right proxy) ----------
+pres_df <- read.csv(data_path("raw", "countypres_2000-2024.csv"))
 
 
-########## CLEAN RAW DATA ###############
-# subset census data 
+# =========================================================
+# 1) Clean Census labor force data
+# Goal: county/state identifiers + numeric LFPR columns.
+# =========================================================
+
+# keep only analysis columns from Census table
 keep_var <- c("S2301_C02_022E", "S2301_C02_023E", "S2301_C02_024E", "S2301_C02_025E",
               "S2301_C02_026E", "S2301_C02_027E", "S2301_C03_023E", "S2301_C03_024E",
               "S2301_C03_025E", "S2301_C03_026E", "S2301_C03_027E", "GEO_ID", "NAME")
@@ -64,7 +85,7 @@ keep_var <- c("S2301_C02_022E", "S2301_C02_023E", "S2301_C02_024E", "S2301_C02_0
 census_short <- subset(census_df, select = keep_var)
 census_short$year <- "2023"
 
-# separate county and year for grouping
+# split NAME into county/state and standardize text format
 census_short_2 <- census_short %>% separate(NAME, into = c("county", "state"), sep = ",\\s*")
 census_short_2 <- census_short_2 %>%
   mutate(
@@ -76,7 +97,7 @@ census_short_2 <- census_short_2 %>%
 description_cols <- as.vector(as.character(unlist(census_short[1, ])))
 print(description_cols)
 
-census_clean <- census_short_2[-1, ] # drop the first naming row from excel 
+census_clean <- census_short_2[-1, ] # drop metadata-like first row
 pre_col_list <-colnames(census_clean)
 
 
@@ -84,7 +105,7 @@ str(census_clean)
 census_clean <- census_clean %>%
   mutate(across(starts_with("S2301"), ~ as.numeric(as.character(.))))
 
-# label vars 
+# add variable labels for readability in downstream inspection
 census_clean <- set_variable_labels(census_clean,
   S2301_C02_022E = "LFPR MALE 20-64",
   S2301_C02_023E = "LFPR FEMALE 20-64",
@@ -105,8 +126,12 @@ census_clean <- set_variable_labels(census_clean,
 
 rm(census_df, census_short, census_short_2, keep_var)
 
-# CLEAN BEA DATA 
-# drop observations that are states 
+# =========================================================
+# 2) Clean BEA GDP and income tables
+# Goal: county-level 2023 slices for merge.
+# =========================================================
+
+# remove aggregate rows and standardize county/state text (GDP table)
 bea_GDP_df_2 <- bea_GDP_df %>%
   mutate(
     across(1:2, \(x) toupper(trimws(x)))
@@ -127,7 +152,7 @@ new_colnames <- c("state", "county", "real_GDP_2017_dollars_2020", "real_GDP_201
 
 colnames(bea_GDP_df_2) <- new_colnames
 
-# pivot long
+# reshape wide year columns to long format (GDP)
 bea_GDP_df_long <- bea_GDP_df_2 %>%
   pivot_longer(
     cols = -c("state", "county"),                                       # exclude id col(s)
@@ -136,14 +161,14 @@ bea_GDP_df_long <- bea_GDP_df_2 %>%
   ) %>%
   mutate(year = as.integer(year))
 
-# keep only 2023 data and drop data without observations
+# keep target year and remove mostly-empty rows
 bea_GDP_df_long_2 <- bea_GDP_df_long %>% filter(year == 2023)
 bea_GDP_clean <- bea_GDP_df_long_2[rowSums(is.na(bea_GDP_df_long_2)) < 6, ] #see how many were dropped 
 
 rm(bea_GDP_df, bea_GDP_df_2, bea_GDP_df_long, bea_GDP_df_long_2, bea_GDP_df_raw) # clean up interim DFs 
 
 
-## CLEANING - same thing for income data as for GDP data
+# repeat analogous cleaning for income table
 dropped_rows <- bea_Y_df %>%
   filter(
     is.na(.[[1]]) |
@@ -174,7 +199,7 @@ new_colnames_Y <- c("state", "county", "per_capita_income_2021", "per_capita_inc
 colnames(bea_Y_df_2) <- new_colnames_Y
 
 
-# pivot long
+# reshape wide year columns to long format (income)
 bea_Y_df_1_long <- bea_Y_df_2 %>%
   pivot_longer(
     cols = -c("state", "county"),                                       # exclude id col(s)
@@ -190,7 +215,10 @@ rm(bea_Y_df, bea_Y_df_1_long, bea_Y_df, bea_Y_df_2,
    bea_Y_df_2_long, bea_Y_df_raw) # clean up interim DFs 
 
 
-############### Merge data together (3 data sets) ###################
+# =========================================================
+# 3) Merge Census + BEA into analysis frame
+# =========================================================
+
 merged_bea <- bea_Y_clean %>%
   full_join(bea_GDP_clean, by = c("county", "state"), suffix = c(".df1", ".df2"))
 
@@ -210,8 +238,9 @@ merged_bea <- merged_bea %>% select(-year.df1, -year.df2)
 df_full <- census_clean %>% full_join(merged_bea, by = c("county", "state"))
 
 
-
-############ REGRESSION ANALYSIS ####################
+# =========================================================
+# 4) Baseline regression analysis
+# =========================================================
 
 model_v1 <- lm(S2301_C02_023E ~ log(per_capita_income), data = df_full)
 summary(model_v1)
@@ -222,13 +251,15 @@ model_v2 <- lm(S2301_C02_023E ~ log(per_capita_income) + I(log(per_capita_income
 summary(model_v2)
 
 
-# plot the basic u-curve at the county level 
-plot1 <- plot(log(df_full$per_capita_income), df_full$S2301_C02_023E,
-     xlab = "log(per capita income)", ylab = "Labor Force Participation Rate")
-curve(coef(model_v2)[1] + coef(model_v2)[2]*x + coef(model_v2)[3]*x^2,
-      add = TRUE, col = "red", lwd = 2)
+# baseline U-curve visualization
+save_plot("01_baseline_female_lfpr_ucurve.png", {
+  plot(log(df_full$per_capita_income), df_full$S2301_C02_023E,
+       xlab = "log(per capita income)", ylab = "Labor Force Participation Rate")
+  curve(coef(model_v2)[1] + coef(model_v2)[2] * x + coef(model_v2)[3] * x^2,
+        add = TRUE, col = "red", lwd = 2)
+})
 
-# now interrogate the data (summary stats, data type)
+# summary statistics table for core variables
 stats_table <- df_full %>%
   summarise(
     Mean_LFPR = mean(S2301_C02_023E, na.rm = TRUE),
@@ -243,22 +274,28 @@ stats_table <- df_full %>%
 
 kable(stats_table, digits = 2, caption = "Summary Statistics")
  
-# trimming extrema 
+# =========================================================
+# 5) Outlier trimming robustness checks
+# =========================================================
+
+# trim at 99th percentile
 df_full_v2 <- df_full %>%
   filter(S2301_C02_023E <= quantile(S2301_C02_023E, 0.99, na.rm = TRUE),
          per_capita_income <= quantile(per_capita_income, 0.99, na.rm = TRUE))
 
-# rerun the log and log^2 specification of the u-curve reg
+# rerun nonlinear model on trimmed sample
 model_v3 <- lm(S2301_C02_023E ~ log(per_capita_income) + I(log(per_capita_income)^2),
                data = df_full_v2)
 summary(model_v3)
 
-plot2 <- plot(log(df_full_v2$per_capita_income), df_full_v2$S2301_C02_023E,
-     xlab = "log(per capita income)", ylab = "Labor Force Participation Rate")
-curve(coef(model_v3)[1] + coef(model_v3)[2]*x + coef(model_v3)[3]*x^2,
-      add = TRUE, col = "pink", lwd = 2)
+save_plot("02_trim99_female_lfpr_ucurve.png", {
+  plot(log(df_full_v2$per_capita_income), df_full_v2$S2301_C02_023E,
+       xlab = "log(per capita income)", ylab = "Labor Force Participation Rate")
+  curve(coef(model_v3)[1] + coef(model_v3)[2] * x + coef(model_v3)[3] * x^2,
+        add = TRUE, col = "pink", lwd = 2)
+})
 
-#further trim 
+# trim at 99.5th percentile
 df_full_v3 <- df_full %>%
   filter(S2301_C02_023E <= quantile(S2301_C02_023E, 0.995, na.rm = TRUE),
          per_capita_income <= quantile(per_capita_income, 0.995, na.rm = TRUE))
@@ -267,35 +304,48 @@ model_v4 <- lm(S2301_C02_023E ~ log(per_capita_income) + I(log(per_capita_income
                data = df_full_v3)
 summary(model_v4)
 
-plot3 <- plot(log(df_full_v3$per_capita_income), df_full_v3$S2301_C02_023E,
-              xlab = "log(per capita income)", ylab = "Labor Force Participation Rate")
-curve(coef(model_v4)[1] + coef(model_v4)[2]*x + coef(model_v4)[3]*x^2,
-      add = TRUE, col = "orange", lwd = 2)
+save_plot("03_trim995_female_lfpr_ucurve.png", {
+  plot(log(df_full_v3$per_capita_income), df_full_v3$S2301_C02_023E,
+       xlab = "log(per capita income)", ylab = "Labor Force Participation Rate")
+  curve(coef(model_v4)[1] + coef(model_v4)[2] * x + coef(model_v4)[3] * x^2,
+        add = TRUE, col = "orange", lwd = 2)
+})
 
 
-# ROBUSTNESS CHECK - check against male LFPR 
+# =========================================================
+# 6) Robustness: male LFPR and gender gap outcomes
+# =========================================================
+
+# check if the same U-shape appears for male LFPR
 model_v4_MALE <- lm(S2301_C02_022E ~ log(per_capita_income) + I(log(per_capita_income)^2),
                data = df_full_v3)
 summary(model_v4_MALE)
 
-plot3b <- plot(log(df_full_v3$per_capita_income), df_full_v3$S2301_C02_022E,
-              xlab = "log(per capita income)", ylab = "Labor Force Participation Rate (male)")
-curve(coef(model_v4_MALE)[1] + coef(model_v4_MALE)[2]*x + coef(model_v4_MALE)[3]*x^2,
-      add = TRUE, col = "blue", lwd = 2)
+save_plot("04_trim995_male_lfpr_ucurve.png", {
+  plot(log(df_full_v3$per_capita_income), df_full_v3$S2301_C02_022E,
+       xlab = "log(per capita income)", ylab = "Labor Force Participation Rate (male)")
+  curve(coef(model_v4_MALE)[1] + coef(model_v4_MALE)[2] * x + coef(model_v4_MALE)[3] * x^2,
+        add = TRUE, col = "blue", lwd = 2)
+})
 # IT DOES HOLD FOR MALE - NOT GREAT 
 
-# check female - male 
+# analyze gender LFPR difference directly
 model_v4_FVM <- lm(I(S2301_C02_022E-S2301_C02_023E) ~ log(per_capita_income) + I(log(per_capita_income)^2),
                     data = df_full_v3)
 summary(model_v4_FVM)
 
-plot3c <- plot(log(df_full_v3$per_capita_income), (df_full_v3$S2301_C02_022E - df_full_v3$S2301_C02_023E),
-              xlab = "log(per capita income)", ylab = "Labor Force Participation Rate (difference)")
-curve(coef(model_v4_FVM)[1] + coef(model_v4_FVM)[2]*x + coef(model_v4_FVM)[3]*x^2,
-      add = TRUE, col = "green", lwd = 2)
-# but against the difference, we see something - even though it is flat 
+save_plot("05_trim995_gender_gap_ucurve.png", {
+  plot(log(df_full_v3$per_capita_income), (df_full_v3$S2301_C02_022E - df_full_v3$S2301_C02_023E),
+       xlab = "log(per capita income)", ylab = "Labor Force Participation Rate (difference)")
+  curve(coef(model_v4_FVM)[1] + coef(model_v4_FVM)[2] * x + coef(model_v4_FVM)[3] * x^2,
+        add = TRUE, col = "green", lwd = 2)
+}) # but against the difference, we see something - even though it is flat 
 
-# CALIFORNIA ONLY 
+
+# =========================================================
+# 7) State-specific deep dive: California
+# =========================================================
+
 df_CA <- subset(df_full_v3, state=="CALIFORNIA")
 
 # male v female in CA 
@@ -303,34 +353,42 @@ model_v4_FVM_CA <- lm(I(S2301_C02_022E-S2301_C02_023E) ~ log(per_capita_income) 
                    data = df_CA)
 summary(model_v4_FVM_CA)
 
-plotca1 <- plot(log(df_CA$per_capita_income), (df_CA$S2301_C02_022E - df_CA$S2301_C02_023E),
-               xlab = "log(per capita income)", ylab = "Labor Force Participation Rate (difference)")
-curve(coef(model_v4_FVM_CA)[1] + coef(model_v4_FVM_CA)[2]*x + coef(model_v4_FVM_CA)[3]*x^2,
-      add = TRUE, col = "blue", lwd = 2)
+save_plot("06_california_gender_gap_ucurve.png", {
+  plot(log(df_CA$per_capita_income), (df_CA$S2301_C02_022E - df_CA$S2301_C02_023E),
+       xlab = "log(per capita income)", ylab = "Labor Force Participation Rate (difference)")
+  curve(coef(model_v4_FVM_CA)[1] + coef(model_v4_FVM_CA)[2] * x + coef(model_v4_FVM_CA)[3] * x^2,
+        add = TRUE, col = "blue", lwd = 2)
+})
 
 # female only in CA 
 model_v3_CA <- lm(S2301_C02_023E ~ log(per_capita_income) + I(log(per_capita_income)^2),
                       data = df_CA)
 summary(model_v3_CA)
 
-plotca2 <- plot(log(df_CA$per_capita_income), (df_CA$S2301_C02_023E),
-               xlab = "log(per capita income)", ylab = "Labor Force Participation Rate (female)")
-curve(coef(model_v3_CA)[1] + coef(model_v3_CA)[2]*x + coef(model_v3_CA)[3]*x^2,
-      add = TRUE, col = "blue", lwd = 2)
+save_plot("07_california_female_lfpr_ucurve.png", {
+  plot(log(df_CA$per_capita_income), (df_CA$S2301_C02_023E),
+       xlab = "log(per capita income)", ylab = "Labor Force Participation Rate (female)")
+  curve(coef(model_v3_CA)[1] + coef(model_v3_CA)[2] * x + coef(model_v3_CA)[3] * x^2,
+        add = TRUE, col = "blue", lwd = 2)
+})
 
 # male only in CA 
 model_male_CA <- lm(S2301_C02_022E ~ log(per_capita_income) + I(log(per_capita_income)^2),
                   data = df_CA)
 summary(model_male_CA)
 
-plotca2 <- plot(log(df_CA$per_capita_income), (df_CA$S2301_C02_022E),
-                xlab = "log(per capita income)", ylab = "Labor Force Participation Rate (male)")
-curve(coef(model_male_CA)[1] + coef(model_male_CA)[2]*x + coef(model_male_CA)[3]*x^2,
-      add = TRUE, col = "blue", lwd = 2)
+save_plot("08_california_male_lfpr_ucurve.png", {
+  plot(log(df_CA$per_capita_income), (df_CA$S2301_C02_022E),
+       xlab = "log(per capita income)", ylab = "Labor Force Participation Rate (male)")
+  curve(coef(model_male_CA)[1] + coef(model_male_CA)[2] * x + coef(model_male_CA)[3] * x^2,
+        add = TRUE, col = "blue", lwd = 2)
+})
 
 
+# =========================================================
+# 8) State loop: gender-gap model by state
+# =========================================================
 
-# STATE LOOP 
 states <- unique(df_full_v3$state)
 
 for(s in states) {
@@ -342,19 +400,24 @@ for(s in states) {
   print(paste("State:", s))
   print(summary(model))
   
-  plot(log(df_state$per_capita_income),
-       (df_state$S2301_C02_022E - df_state$S2301_C02_023E),
-       xlab = "log(per capita income)",
-       ylab = "Labor Force Participation Rate (difference)",
-       main = paste("State:", s))
-  
-  curve(coef(model)[1] + coef(model)[2]*x + coef(model)[3]*x^2,
-        add = TRUE, col = "red", lwd = 2)
+  safe_state <- gsub("[^A-Za-z0-9]+", "_", s)
+  save_plot(paste0("state_gender_gap_", safe_state, ".png"), {
+    plot(log(df_state$per_capita_income),
+         (df_state$S2301_C02_022E - df_state$S2301_C02_023E),
+         xlab = "log(per capita income)",
+         ylab = "Labor Force Participation Rate (difference)",
+         main = paste("State:", s))
+    curve(coef(model)[1] + coef(model)[2] * x + coef(model)[3] * x^2,
+          add = TRUE, col = "red", lwd = 2)
+  })
 }
 
 
-###### ADDING DEMOGRAPHIC DATA 
-census_demo_data = read.csv("/Users/allegrasaggese/Library/CloudStorage/Dropbox/Tradwives/data/Census-Demographics-bycounty.csv")
+# =========================================================
+# 9) Add demographic controls
+# =========================================================
+
+census_demo_data <- read.csv(ext_path("data", "Census-Demographics-bycounty.csv"))
 
 census_demo_collapse <- census_demo_data %>%
   mutate(AGEGRP = ifelse(AGEGRP == 0, 0, 1)) %>%
@@ -376,14 +439,16 @@ collapsed_2 <- collapsed_2 %>%
     state = toupper(trimws(state))
   )
 
-# merge on county / state 
+# merge demographics into county-level analysis frame
 df_full_demo <- df_full_v3 %>% full_join(collapsed_2, by = c("county", "state"))
 
-##### WE HAVE POP BY DEMO (not LFPR)
+
+# =========================================================
+# 10) Add historical presidential election data + calculate vote margin
+# ========================================================
 
 
-
-# get party level votes for each county/year pair
+# aggregate party vote totals at county-year level
 pres_summary <- pres_df %>%
   group_by(year, county_fips, party) %>%
   summarise(
@@ -392,15 +457,18 @@ pres_summary <- pres_df %>%
     .groups = "drop"
   )
 
-
 pres_wide <- pres_summary %>%
-  filter(party != "", !is.na(party)) %>%
+  filter(party != "", !is.na(party)) %>% # drop where there is no aprty data available 
   pivot_wider(names_from = party, values_from = totalcanvotes, values_fill = 0)
 
-pres_wide <- pres_wide %>%
+
+pres_wide <- pres_wide %>% # calc margin 
   mutate(
     vote_spread = DEMOCRAT - REPUBLICAN,
     vote_margin = (DEMOCRAT - REPUBLICAN) / (DEMOCRAT + REPUBLICAN),
     rep_percent = REPUBLICAN / totalvotes,
     dem_percent = DEMOCRAT / totalvotes
   )
+
+
+

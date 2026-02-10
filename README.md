@@ -45,7 +45,7 @@ labor force participation over time in the country.
    - Output goes to `data/processed/fred/`.
 4. Run preliminary analysis:
    - Run `10-2025-prelim-analysis.R` to load Census/BEA data from Dropbox, clean, merge, and run regressions.
-   - Save any plots to `data/graphs/` (recommended convention).
+   - Plots are automatically saved to `data/graphs/`.
 
 #### Expected external files
 Place these in `<external_data_root>/data/` (Dropbox):
