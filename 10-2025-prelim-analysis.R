@@ -356,3 +356,24 @@ collapsed_2 <- collapsed_2 %>%
 df_full_demo <- df_full_v3 %>% full_join(collapsed_2, by = c("county", "state"))
 
 ##### WE HAVE POP BY DEMO (not LFPR)
+
+
+# read in election data and create a panel for this 
+pres_df <- read.csv("/User/allegrasaggese/Documents/GitHub/school-boards/data/countypres_2000-2024.csv")
+
+pres_summary <- pres %>%
+  group_by(year, county_fips, party) %>%
+  summarise(total_votes = sum(votes, na.rm = TRUE), .groups = "drop")
+
+
+pres_wide <- pres_summary %>%
+  pivot_wider(names_from = party, values_from = total_votes, values_fill = 0)
+
+pres_wide <- pres_wide %>%
+  mutate(
+    vote_spread = DEMOCRAT - REPUBLICAN,
+    vote_margin = (DEMOCRAT - REPUBLICAN) / (DEMOCRAT + REPUBLICAN),
+    rep_percent = REPUBLICAN / totalvotes,
+    dem_percent = DEMOCRAT / totalvotes
+  )
+
