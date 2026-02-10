@@ -19,3 +19,16 @@ culture effects economic decision making - beyond its functionality.
 - To do file: for note taking by authors
 - Functions file: for storage of loops and other common functions to be repeated in cleaning process, load into preamble of all files
 - Prelim analysis file: using US census and BEA data to fit intra-country (county-level) U-curves for labor force participation (female) in the US
+
+#### Data layout
+- `data/raw`: raw inputs (kept out of git)
+- `data/interim`: intermediate files (kept out of git)
+- `data/processed`: processed outputs (kept out of git)
+- `data/graphs`: plots and visuals
+
+#### Paths and config
+- Central path helpers live in `R/paths.R`.
+- Update `config.yml` for external data locations (e.g., Dropbox).
+- You can override paths via environment variables:
+  - `SCHOOL_BOARDS_DATA_ROOT`
+  - `SCHOOL_BOARDS_EXTERNAL_ROOT`

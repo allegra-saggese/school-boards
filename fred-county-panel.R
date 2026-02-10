@@ -5,11 +5,13 @@ library(readr)
 library(lubridate)
 library(fredr)
 
+source("R/paths.R")
+
 # ---- Config ----
 start_year <- 2000
 end_year <- 2023
 sleep_seconds <- 0.6
-out_dir <- "data/fred"
+out_dir <- data_path("processed", "fred")
 
 fred_key <- Sys.getenv("FRED_API_KEY")
 if (fred_key == "") {
@@ -17,9 +19,7 @@ if (fred_key == "") {
 }
 fredr_set_key(fred_key)
 
-if (!dir.exists(out_dir)) {
-  dir.create(out_dir, recursive = TRUE)
-}
+ensure_dir(out_dir)
 
 start_date <- as.Date(sprintf("%d-01-01", start_year))
 end_date <- as.Date(sprintf("%d-12-31", end_year))

@@ -7,28 +7,52 @@ library(purrr)
 library(knitr)
 library(R.utils)
 
+source("R/paths.R")
 
 ########## LOAD IN RAW DATA ###############
 getwd()
 # load census data 
-census_df = read.csv("/Users/allegrasaggese/Dropbox/mf-as-shared-ideas/tradwives/data/Census-ACSST5Y2023.S2301-Data.csv")
+census_path <- ext_path("data", "Census-ACSST5Y2023.S2301-Data.csv")
+if (!file.exists(census_path)) {
+  stop(paste("Census file not found:", census_path))
+}
+census_df = read.csv(census_path)
 
 # load BEA data 
-bea_Y_df_raw = read_excel("/Users/allegrasaggese/Dropbox/mf-as-shared-ideas/tradwives/data/BEA-county-per-capita-income.xlsx", 
+bea_income_path <- ext_path("data", "BEA-county-per-capita-income.xlsx")
+if (!file.exists(bea_income_path)) {
+  stop(paste("BEA income file not found:", bea_income_path))
+}
+bea_Y_df_raw = read_excel(bea_income_path, 
                       sheet = 1,
                       skip = 3)
 
-bea_Y_df = read_excel("/Users/allegrasaggese/Dropbox/mf-as-shared-ideas/tradwives/data/BEA-county-per-capita-income_edited.xlsx", 
+bea_income_edits_path <- ext_path("data", "BEA-county-per-capita-income_edited.xlsx")
+if (!file.exists(bea_income_edits_path)) {
+  stop(paste("BEA income edited file not found:", bea_income_edits_path))
+}
+bea_Y_df = read_excel(bea_income_edits_path, 
                       sheet = 1,
                       skip = 3)
 
-bea_GDP_df_raw = read_excel("/Users/allegrasaggese/Dropbox/mf-as-shared-ideas/tradwives/data/BEA-county-percapita-GDP.xlsx", 
+bea_gdp_path <- ext_path("data", "BEA-county-percapita-GDP.xlsx")
+if (!file.exists(bea_gdp_path)) {
+  stop(paste("BEA GDP file not found:", bea_gdp_path))
+}
+bea_GDP_df_raw = read_excel(bea_gdp_path, 
                       sheet = 1,
                       skip = 3)
 
-bea_GDP_df = read_excel("/Users/allegrasaggese/Dropbox/mf-as-shared-ideas/tradwives/data/BEA-county-percapita-GDP-edits.xlsx", 
+bea_gdp_edits_path <- ext_path("data", "BEA-county-percapita-GDP-edits.xlsx")
+if (!file.exists(bea_gdp_edits_path)) {
+  stop(paste("BEA GDP edited file not found:", bea_gdp_edits_path))
+}
+bea_GDP_df = read_excel(bea_gdp_edits_path, 
                         sheet = 1,
                         skip = 3)
+
+# read in election data (presidential data for left/right proxy)
+pres_df <- read.csv("/Users/allegrasaggese/Documents/GitHub/school-boards/data/countypres_2000-2024.csv")
 
 
 ########## CLEAN RAW DATA ###############
@@ -358,16 +382,20 @@ df_full_demo <- df_full_v3 %>% full_join(collapsed_2, by = c("county", "state"))
 ##### WE HAVE POP BY DEMO (not LFPR)
 
 
-# read in election data and create a panel for this 
-pres_df <- read.csv("/User/allegrasaggese/Documents/GitHub/school-boards/data/countypres_2000-2024.csv")
 
-pres_summary <- pres %>%
+# get party level votes for each county/year pair
+pres_summary <- pres_df %>%
   group_by(year, county_fips, party) %>%
-  summarise(total_votes = sum(votes, na.rm = TRUE), .groups = "drop")
+  summarise(
+    totalcanvotes = sum(candidatevotes, na.rm = TRUE),
+    totalvotes = first(totalvotes),
+    .groups = "drop"
+  )
 
 
 pres_wide <- pres_summary %>%
-  pivot_wider(names_from = party, values_from = total_votes, values_fill = 0)
+  filter(party != "", !is.na(party)) %>%
+  pivot_wider(names_from = party, values_from = totalcanvotes, values_fill = 0)
 
 pres_wide <- pres_wide %>%
   mutate(
@@ -376,4 +404,3 @@ pres_wide <- pres_wide %>%
     rep_percent = REPUBLICAN / totalvotes,
     dem_percent = DEMOCRAT / totalvotes
   )
-

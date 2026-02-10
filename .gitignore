@@ -3,3 +3,8 @@
 .RData
 .Ruserdata
 .csv
+data/raw/
+data/interim/
+data/processed/
+data/graphs/
+*.sqlite

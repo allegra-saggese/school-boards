@@ -6,9 +6,18 @@ library(ipumsr)
 library(RSQLite)
 library(DBI)
 
-zip_dir  <- "/Users/allegrasaggese/Desktop/research/school-boards/data-zipped" # Where GRF (spatial) data is 
-data_dir <- "/Users/allegrasaggese/Desktop/research/school-boards/grf-unzipped"  # Destination folder
-data_dir_2 <- "/Users/allegrasaggese/Desktop/research/school-boards/ipums" #raw IPUMS data folder
+source("R/paths.R")
+
+zip_dir  <- ext_path("data", "data-zipped") # Where GRF (spatial) data is 
+data_dir <- ext_path("data", "grf-unzipped")  # Destination folder
+data_dir_2 <- ext_path("data", "ipums") # raw IPUMS data folder
+
+if (!dir.exists(zip_dir)) {
+  stop(paste("zip_dir does not exist:", zip_dir))
+}
+if (!dir.exists(data_dir_2)) {
+  stop(paste("data_dir_2 does not exist:", data_dir_2))
+}
 
 # make directory if not already set in script
 if (!dir.exists(data_dir)) {
@@ -89,7 +98,8 @@ read_ipums_micro_chunked(
 )
 
 # now create a SQL database to callback / store 
-con <- dbConnect(SQLite(), "ipums_data.sqlite")
+ensure_dir(data_path("interim"))
+con <- dbConnect(SQLite(), data_path("interim", "ipums_data.sqlite"))
 
 # Modify the chunk callback to store each chunk in the database
 chunk_callback <- function(chunk_df, pos) {
