@@ -5,27 +5,28 @@ library(dplyr)
 library(labelled)
 library(purrr)
 library(knitr)
+library(R.utils)
 
 
 ########## LOAD IN RAW DATA ###############
 getwd()
 # load census data 
-census_df = read.csv("/Users/allegrasaggese/Library/CloudStorage/Dropbox/Tradwives/data/Census-ACSST5Y2023.S2301-Data.csv")
+census_df = read.csv("/Users/allegrasaggese/Dropbox/mf-as-shared-ideas/tradwives/data/Census-ACSST5Y2023.S2301-Data.csv")
 
 # load BEA data 
-bea_Y_df_raw = read_excel("/Users/allegrasaggese/Library/CloudStorage/Dropbox/Tradwives/data/BEA-county-per-capita-income.xlsx", 
+bea_Y_df_raw = read_excel("/Users/allegrasaggese/Dropbox/mf-as-shared-ideas/tradwives/data/BEA-county-per-capita-income.xlsx", 
                       sheet = 1,
                       skip = 3)
 
-bea_Y_df = read_excel("/Users/allegrasaggese/Library/CloudStorage/Dropbox/Tradwives/data/BEA-county-per-capita-income_edited.xlsx", 
+bea_Y_df = read_excel("/Users/allegrasaggese/Dropbox/mf-as-shared-ideas/tradwives/data/BEA-county-per-capita-income_edited.xlsx", 
                       sheet = 1,
                       skip = 3)
 
-bea_GDP_df_raw = read_excel("/Users/allegrasaggese/Library/CloudStorage/Dropbox/Tradwives/data/BEA-county-percapita-GDP.xlsx", 
+bea_GDP_df_raw = read_excel("/Users/allegrasaggese/Dropbox/mf-as-shared-ideas/tradwives/data/BEA-county-percapita-GDP.xlsx", 
                       sheet = 1,
                       skip = 3)
 
-bea_GDP_df = read_excel("/Users/allegrasaggese/Library/CloudStorage/Dropbox/Tradwives/data/BEA-county-percapita-GDP-edits.xlsx", 
+bea_GDP_df = read_excel("/Users/allegrasaggese/Dropbox/mf-as-shared-ideas/tradwives/data/BEA-county-percapita-GDP-edits.xlsx", 
                         sheet = 1,
                         skip = 3)
 
