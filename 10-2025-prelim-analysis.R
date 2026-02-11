@@ -8,16 +8,7 @@ library(knitr)
 library(R.utils)
 
 source("R/paths.R")
-
-# Save plots directly to data/graphs with consistent image settings.
-save_plot <- function(filename, expr, width = 1800, height = 1200, res = 180) {
-  ensure_dir(graphs_dir())
-  out_file <- file.path(graphs_dir(), filename)
-  png(filename = out_file, width = width, height = height, res = res)
-  on.exit(dev.off(), add = TRUE)
-  eval.parent(substitute(expr))
-  invisible(out_file)
-}
+source("functions.R")
 
 # =========================================================
 # 0) Setup and input files
@@ -202,7 +193,7 @@ colnames(bea_Y_df_2) <- new_colnames_Y
 # reshape wide year columns to long format (income)
 bea_Y_df_1_long <- bea_Y_df_2 %>%
   pivot_longer(
-    cols = -c("state", "county"),                                       # exclude id col(s)
+    cols = -c("state", "county"),                         # exclude id col(s)
     names_to = c(".value", "year"),                       # base name becomes a column
     names_pattern = "^(.*)_(20(?:20|21|22|23))$"          # split at _YYYY
   ) %>%
@@ -211,8 +202,9 @@ bea_Y_df_1_long <- bea_Y_df_2 %>%
 bea_Y_df_2_long <- bea_Y_df_1_long %>% filter(year == 2023)
 bea_Y_clean <- bea_Y_df_2_long[rowSums(is.na(bea_Y_df_2_long)) < 6, ] #no drops 
 
-rm(bea_Y_df, bea_Y_df_1_long, bea_Y_df, bea_Y_df_2, 
-   bea_Y_df_2_long, bea_Y_df_raw) # clean up interim DFs 
+# clean up interim DFs 
+#rm(bea_Y_df, bea_Y_df_1_long, bea_Y_df, bea_Y_df_2, 
+#   bea_Y_df_2_long, bea_Y_df_raw)
 
 
 # =========================================================
@@ -235,6 +227,7 @@ colnames(merged_bea)
 # drop year indicator (all the same year)
 merged_bea <- merged_bea %>% select(-year.df1, -year.df2)
 
+# merge the clean census data with the BEA data
 df_full <- census_clean %>% full_join(merged_bea, by = c("county", "state"))
 
 
@@ -242,7 +235,11 @@ df_full <- census_clean %>% full_join(merged_bea, by = c("county", "state"))
 # 4) Baseline regression analysis
 # =========================================================
 
-model_v1 <- lm(S2301_C02_023E ~ log(per_capita_income), data = df_full)
+# basic household income against labor force participation
+model_v1log <- lm(S2301_C02_023E ~ log(per_capita_income), data = df_full)
+summary(model_v1log)
+
+model_v1 <- lm(S2301_C02_023E ~ per_capita_income, data = df_full)
 summary(model_v1)
 
 
@@ -417,6 +414,89 @@ for(s in states) {
 # 9) Add demographic controls
 # =========================================================
 
+# County demographic panel note:
+# - ACS 1-year is annual, but only covers larger counties (not full county coverage).
+# - ACS 5-year covers all counties, but adjacent years overlap by construction.
+# - For true year-over-year full-county coverage, use Census PEP endpoints.
+#
+# Optional pull helper below creates an ACS panel with ethnicity/education shares.
+# (Age-share bins can be added from PEP or ACS profile tables once variable mapping is finalized.)
+# Leave run_demographics_pull <- FALSE unless you want to fetch and save a fresh panel.
+pull_acs_county_demographics_panel <- function(years = 2010:2023, survey = "acs5") {
+  if (!requireNamespace("tidycensus", quietly = TRUE)) {
+    stop("Package 'tidycensus' is required. Install with install.packages('tidycensus').")
+  }
+  if (!requireNamespace("purrr", quietly = TRUE)) {
+    stop("Package 'purrr' is required. Install with install.packages('purrr').")
+  }
+
+  acs_vars <- c(
+    total_pop = "B01003_001",
+    hispanic = "B03003_003",
+    white = "B02001_002",
+    black = "B02001_003",
+    asian = "B02001_005",
+    edu_total_25_plus = "B15003_001",
+    edu_ba = "B15003_022",
+    edu_ma = "B15003_023",
+    edu_prof = "B15003_024",
+    edu_phd = "B15003_025"
+  )
+  # Defensive clean-up in case any variable IDs are passed with trailing E/M.
+  acs_vars <- gsub("[EM]$", "", acs_vars)
+
+  out <- purrr::map_dfr(years, function(y) {
+    year_pull <- tryCatch(
+      tidycensus::get_acs(
+      geography = "county",
+      variables = acs_vars,
+      survey = survey,
+      year = y,
+      output = "wide"
+      ),
+      error = function(e) {
+        warning(sprintf("Skipping year %s due to API error: %s", y, conditionMessage(e)))
+        return(NULL)
+      }
+    )
+
+    if (is.null(year_pull)) {
+      return(tibble::tibble())
+    }
+
+    year_pull %>%
+      dplyr::transmute(
+        year = y,
+        fips = GEOID,
+        county = toupper(gsub(" COUNTY, .*", "", NAME)),
+        state = toupper(sub(".*, ", "", NAME)),
+        total_pop = total_popE,
+        share_hispanic = hispanicE / total_popE,
+        share_white = whiteE / total_popE,
+        share_black = blackE / total_popE,
+        share_asian = asianE / total_popE,
+        share_ba_plus = (edu_baE + edu_maE + edu_profE + edu_phdE) / edu_total_25_plusE,
+        source = paste0("ACS_", survey)
+      )
+  })
+
+  if (nrow(out) == 0) {
+    stop("No ACS demographic rows were returned. Check variable availability and your Census API key.")
+  }
+  out
+}
+
+run_demographics_pull <- FALSE
+if (run_demographics_pull) {
+  demographics_panel <- pull_acs_county_demographics_panel(years = 2010:2023, survey = "acs5")
+  ensure_dir(data_path("processed", "demographics"))
+  write.csv(
+    demographics_panel,
+    data_path("processed", "demographics", "county_demographics_panel_acs5.csv"),
+    row.names = FALSE
+  )
+}
+
 census_demo_data <- read.csv(ext_path("data", "Census-Demographics-bycounty.csv"))
 
 census_demo_collapse <- census_demo_data %>%
@@ -469,6 +549,3 @@ pres_wide <- pres_wide %>% # calc margin
     rep_percent = REPUBLICAN / totalvotes,
     dem_percent = DEMOCRAT / totalvotes
   )
-
-
-

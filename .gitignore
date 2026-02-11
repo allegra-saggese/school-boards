@@ -8,3 +8,5 @@ data/interim/
 data/processed/
 data/graphs/
 *.sqlite
+.Renviron
+.Renviron.local

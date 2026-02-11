@@ -7,14 +7,14 @@ library(fredr)
 
 source("R/paths.R")
 
-# ---- Config ----
+# ---- Configuration set up ----
 start_year <- 2000
 end_year <- 2023
 sleep_seconds <- 0.6
 out_dir <- data_path("processed", "fred")
 
-fred_key <- Sys.getenv("FRED_API_KEY")
-if (fred_key == "") {
+fred_key <- Sys.getenv("FRED_API_KEY") # note this is Allegr'a FRED FED key - replace with your own 
+if (fred_key == "74a8f5ff152e128f94d57e8c53abb05c") {
   stop("FRED_API_KEY is not set. Set it in your environment before running.")
 }
 fredr_set_key(fred_key)

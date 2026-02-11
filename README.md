@@ -46,6 +46,48 @@ labor force participation over time in the country.
 4. Run preliminary analysis:
    - Run `10-2025-prelim-analysis.R` to load Census/BEA data from Dropbox, clean, merge, and run regressions.
    - Plots are automatically saved to `data/graphs/`.
+5. Run panel pipeline:
+   - Run `lfpr-panel-analysis.R` to pull ACS county LFPR + household income panel, merge presidential vote data with LOCF, run yearly linear/quadratic models, and generate plots.
+   - Outputs are date-prefixed as `YYYY-MM-DD_*`.
+   - Current default panel window is endpoint years `2010:2020`.
+
+#### LFPR panel notes
+- Script: `lfpr-panel-analysis.R`
+- Merge keys: `fips`, `year`
+- Core outcomes:
+  - `lfpr_total`
+  - `lfpr_female`
+  - `lfpr_gap` (`lfpr_male - lfpr_female`)
+- LFPR construction:
+  - built from ACS detailed table `B23001` (sex-by-age-by-employment counts)
+  - computes 20-64 LFPR as count-based rates, consistent across years
+- Income regressor: `log(median_hh_income)` (ACS `B19013_001`)
+- Election overlays:
+  - `vote_margin`
+  - `vote_spread`
+  - non-election years are filled using last observation carried forward (LOCF)
+- Income groups:
+  - `income_quintile_national` (within year, national distribution)
+  - `income_quintile_state` (within state-year)
+
+#### ACS overlap caveat
+- The panel uses ACS 5-year endpoint files for full county coverage.
+- Endpoint years are rolling windows (example: 2010 is 2006-2010, 2011 is 2007-2011).
+- Adjacent endpoint years overlap by 4 years, so changes are not strictly non-overlapping year-over-year changes.
+
+#### Model and plot outputs
+- Models are run separately by year for each outcome with:
+  - linear: `y ~ log_income`
+  - quadratic: `y ~ log_income + I(log_income^2)`
+- Plot families generated:
+  - state-level yearly facets (`5x2` for `2010:2020`) per outcome
+  - color variants by `vote_margin`, `vote_spread`, national quintile, state quintile
+  - vector movement plots from 2010 to 2020
+  - national election-year comparison facets (`2012`, `2016`, `2020`) with vertical national income quintile cutoff lines and color by:
+    - `vote_spread`
+    - `vote_margin`
+    - `rep_percent`
+    - `dem_percent`
 
 #### Expected external files
 Place these in `<external_data_root>/data/` (Dropbox):
@@ -57,3 +99,10 @@ Place these in `<external_data_root>/data/` (Dropbox):
 - `data-zipped/` (GRF ZIP files)
 - `grf-unzipped/` (GRF unzipped files)
 - `ipums/` (IPUMS raw data files, including `usa_00001.xml`)
+
+#### Panel outputs
+- `data/processed/panel/YYYY-MM-DD_lfpr_panel.csv`
+- `data/processed/results/YYYY-MM-DD_lfpr_model_summary.csv`
+- `data/processed/results/YYYY-MM-DD_lfpr_model_coefficients.csv`
+- `data/processed/results/YYYY-MM-DD_lfpr_model_tables.tex`
+- `data/graphs/YYYY-MM-DD_*.png`
