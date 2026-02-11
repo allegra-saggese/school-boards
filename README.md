@@ -15,8 +15,6 @@ labor force participation over time in the country.
     - female parent in household level
     - school district level
     - county level
-- Ballotopedia data cleaning file: for scraping, compiling school board level elections, ideology, conflicts data
-- To do file: for note taking by authors
 - Functions file: for storage of loops and other common functions to be repeated in cleaning process, load into preamble of all files
 - Prelim analysis file: using US census and BEA data to fit intra-country (county-level) U-curves for labor force participation (female) in the US
 
