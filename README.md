@@ -106,3 +106,12 @@ Place these in `<external_data_root>/data/` (Dropbox):
 - `data/processed/results/YYYY-MM-DD_lfpr_model_coefficients.csv`
 - `data/processed/results/YYYY-MM-DD_lfpr_model_tables.tex`
 - `data/graphs/YYYY-MM-DD_*.png`
+
+#### Data and reference sources
+- Princeton Elections LibGuide (data references and archives): [https://libguides.princeton.edu/elections#s-lg-box-10082744](https://libguides.princeton.edu/elections#s-lg-box-10082744)
+- MIT Election Data and Science Lab (MEDSL): [https://electionlab.mit.edu/data#data](https://electionlab.mit.edu/data#data)
+- Urban Institute `urbnmapr` (future source for county/state mapping workflows): [https://urbaninstitute.github.io/urbnmapr/](https://urbaninstitute.github.io/urbnmapr/)
+- `tidycensus` documentation: [https://walker-data.com/tidycensus/](https://walker-data.com/tidycensus/)
+- Census API / ACS 5-year docs: [https://www.census.gov/data/developers/data-sets/acs-5year.html](https://www.census.gov/data/developers/data-sets/acs-5year.html)
+- ACS program overview: [https://www.census.gov/programs-surveys/acs](https://www.census.gov/programs-surveys/acs)
+- FRED API docs: [https://fred.stlouisfed.org/docs/api/fred/](https://fred.stlouisfed.org/docs/api/fred/)

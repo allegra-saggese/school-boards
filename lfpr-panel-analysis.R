@@ -153,14 +153,25 @@ pres_summary <- pres_df %>%
 
 pres_wide <- pres_summary %>%
   pivot_wider(names_from = party, values_from = totalcanvotes, values_fill = 0) %>%
+  group_by(year) %>%
   mutate(
     fips = str_pad(as.character(county_fips), 5, pad = "0"),
     vote_spread = DEMOCRAT - REPUBLICAN,
     vote_margin = ifelse((DEMOCRAT + REPUBLICAN) > 0, (DEMOCRAT - REPUBLICAN) / (DEMOCRAT + REPUBLICAN), NA_real_),
     dem_percent = ifelse(totalvotes > 0, DEMOCRAT / totalvotes, NA_real_),
-    rep_percent = ifelse(totalvotes > 0, REPUBLICAN / totalvotes, NA_real_)
+    rep_percent = ifelse(totalvotes > 0, REPUBLICAN / totalvotes, NA_real_),
+    # Signed within-year normalization to [-1, 1] for comparable color scales.
+    vote_spread_norm = {
+      max_abs_spread <- suppressWarnings(max(abs(vote_spread), na.rm = TRUE))
+      if (is.finite(max_abs_spread) && max_abs_spread > 0) {
+        vote_spread / max_abs_spread
+      } else {
+        rep(NA_real_, dplyr::n())
+      }
+    }
   ) %>%
-  select(fips, year, vote_spread, vote_margin, dem_percent, rep_percent)
+  ungroup() %>%
+  select(fips, year, vote_spread, vote_spread_norm, vote_margin, dem_percent, rep_percent)
 
 pres_locf <- expand_grid(
   fips = unique(lfpr_panel$fips),
@@ -169,7 +180,7 @@ pres_locf <- expand_grid(
   left_join(pres_wide, by = c("fips", "year")) %>%
   group_by(fips) %>%
   arrange(year, .by_group = TRUE) %>%
-  fill(vote_spread, vote_margin, dem_percent, rep_percent, .direction = "down") %>%
+  fill(vote_spread, vote_spread_norm, vote_margin, dem_percent, rep_percent, .direction = "down") %>%
   ungroup()
 
 lfpr_panel <- lfpr_panel %>%
@@ -312,12 +323,12 @@ plot_state_year_facets <- function(df, state_name, outcome, color_mode = c("none
   }
 
   if (color_mode == "vote_spread") {
-    p <- ggplot(state_df, aes(x = log_income, y = .data[[outcome]], color = vote_spread)) +
+    p <- ggplot(state_df, aes(x = log_income, y = .data[[outcome]], color = vote_spread_norm)) +
       geom_point(alpha = 0.7, size = 1.0) +
       geom_smooth(method = "lm", formula = fit_formula, se = FALSE, color = "black", linewidth = 0.6) +
       scale_color_gradient2(low = "red", mid = "white", high = "blue", midpoint = 0, na.value = "grey70") +
       facet_wrap(~year, ncol = 5) +
-      labs(title = paste(state_name, "-", outcome, "- vote_spread"), x = "log(median household income)", y = outcome, color = "vote_spread") +
+      labs(title = paste(state_name, "-", outcome, "- vote_spread (normalized)"), x = "log(median household income)", y = outcome, color = "vote_spread_norm") +
       theme_minimal(base_size = 11)
   }
 
@@ -364,10 +375,10 @@ plot_vectors_2010_2020 <- function(df, outcome, color_mode = c("vote_margin", "v
 
   tmp <- df %>%
     filter(year %in% c(start_y, end_y)) %>%
-    select(fips, state, county, year, log_income, all_of(outcome), vote_margin, vote_spread, income_quintile_national, income_quintile_state) %>%
+    select(fips, state, county, year, log_income, all_of(outcome), vote_margin, vote_spread, vote_spread_norm, income_quintile_national, income_quintile_state) %>%
     pivot_wider(
       names_from = year,
-      values_from = c(log_income, all_of(outcome), vote_margin, vote_spread, income_quintile_national, income_quintile_state),
+      values_from = c(log_income, all_of(outcome), vote_margin, vote_spread, vote_spread_norm, income_quintile_national, income_quintile_state),
       names_sep = "_"
     ) %>%
     filter(!is.na(.data[[paste0("log_income_", start_y)]]), !is.na(.data[[paste0("log_income_", end_y)]])) %>%
@@ -414,7 +425,7 @@ plot_vectors_2010_2020 <- function(df, outcome, color_mode = c("vote_margin", "v
         aes(
           x = .data[[paste0("log_income_", end_y)]],
           y = .data[[paste0(outcome, "_", end_y)]],
-          color = .data[[paste0("vote_spread_", end_y)]]
+          color = .data[[paste0("vote_spread_norm_", end_y)]]
         ),
         size = 1.2
       ) +
@@ -501,7 +512,7 @@ plot_national_election_years <- function(df, outcome, color_var) {
 }
 
 for (outcome in outcomes) {
-  plot_national_election_years(lfpr_panel, outcome, "vote_spread")
+  plot_national_election_years(lfpr_panel, outcome, "vote_spread_norm")
   plot_national_election_years(lfpr_panel, outcome, "vote_margin")
   plot_national_election_years(lfpr_panel, outcome, "rep_percent")
   plot_national_election_years(lfpr_panel, outcome, "dem_percent")
