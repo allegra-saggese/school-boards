@@ -17,6 +17,28 @@ start_year <- 2010
 end_year <- 2020
 survey_type <- "acs5" # full county coverage; endpoints overlap by design
 panel_years <- start_year:end_year
+income_base_year <- 2023
+
+# Annual average R-CPI-U-RS values (MONTH == 13) from Census inflation API.
+# This matches ACS guidance for rebasing dollar-denominated estimates.
+cpi_u_rs_annual <- tibble::tribble(
+  ~year, ~cpi_u_rs,
+  2010, 236.876,
+  2011, 241.949,
+  2012, 245.245,
+  2013, 248.004,
+  2014, 252.156,
+  2015, 252.553,
+  2016, 255.401,
+  2017, 260.609,
+  2018, 266.818,
+  2019, 271.917,
+  2020, 275.665,
+  2021, 289.268,
+  2022, 313.761,
+  2023, 329.725,
+  2024, 344.667
+)
 
 panel_dir <- data_path("processed", "panel")
 results_dir <- data_path("processed", "results")
@@ -126,8 +148,7 @@ pull_lfpr_income_panel <- function(years = 2010:2020, survey = "acs5") {
         source = paste0("ACS_", survey, "_B23001_B19013")
       ) %>%
       mutate(
-        lfpr_gap = lfpr_male - lfpr_female,
-        log_income = log(median_hh_income)
+        lfpr_gap = lfpr_male - lfpr_female
       )
 
     out
@@ -135,6 +156,31 @@ pull_lfpr_income_panel <- function(years = 2010:2020, survey = "acs5") {
 }
 
 lfpr_panel <- pull_lfpr_income_panel(years = panel_years, survey = survey_type)
+
+# Convert median household income to a constant-dollar series.
+if (!income_base_year %in% cpi_u_rs_annual$year) {
+  stop(sprintf("income_base_year=%s not found in CPI lookup. Extend cpi_u_rs_annual.", income_base_year))
+}
+
+missing_cpi_years <- setdiff(unique(lfpr_panel$year), cpi_u_rs_annual$year)
+if (length(missing_cpi_years) > 0) {
+  stop(sprintf(
+    "Missing CPI values for panel year(s): %s. Extend cpi_u_rs_annual.",
+    paste(sort(missing_cpi_years), collapse = ", ")
+  ))
+}
+
+base_cpi <- cpi_u_rs_annual$cpi_u_rs[cpi_u_rs_annual$year == income_base_year][1]
+
+lfpr_panel <- lfpr_panel %>%
+  left_join(cpi_u_rs_annual, by = "year") %>%
+  mutate(
+    median_hh_income_nominal = median_hh_income,
+    median_hh_income_real = median_hh_income_nominal * (base_cpi / cpi_u_rs),
+    income_base_year = income_base_year,
+    # Use constant-dollar income in regressions and plots.
+    log_income = log(median_hh_income_real)
+  )
 
 # =========================================================
 # 2) Merge presidential vote metrics and carry forward (LOCF)
