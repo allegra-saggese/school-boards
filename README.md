@@ -1,5 +1,5 @@
 ### School boards, culture, and women who work
-#### WIP, last updated: OCT 2025 
+#### WIP, last updated: FEB 2026
 ***
 
 ##### Project overview
