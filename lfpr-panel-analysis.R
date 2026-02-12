@@ -232,12 +232,12 @@ pres_locf <- expand_grid(
 lfpr_panel <- lfpr_panel %>%
   left_join(pres_locf, by = c("fips", "year")) %>%
   group_by(year) %>%
-  mutate(income_quintile_national = ntile(median_hh_income, 5)) %>%
+  mutate(income_quintile_national = ntile(median_hh_income_real, 5)) %>%
   ungroup() %>%
   group_by(state, year) %>%
   mutate(
-    income_quintile_state = if (sum(!is.na(median_hh_income)) >= 5) {
-      ntile(median_hh_income, 5)
+    income_quintile_state = if (sum(!is.na(median_hh_income_real)) >= 5) {
+      ntile(median_hh_income_real, 5)
     } else {
       rep(NA_integer_, n())
     }
@@ -562,6 +562,140 @@ for (outcome in outcomes) {
   plot_national_election_years(lfpr_panel, outcome, "vote_margin")
   plot_national_election_years(lfpr_panel, outcome, "rep_percent")
   plot_national_election_years(lfpr_panel, outcome, "dem_percent")
+}
+
+# =========================================================
+# 8) Requested non-log income visuals
+# =========================================================
+plot_vector_nonlog_income <- function(df, outcome, color_mode = c("q_state")) {
+  color_mode <- match.arg(color_mode)
+  start_y <- min(panel_years)
+  end_y <- max(panel_years)
+
+  tmp <- df %>%
+    filter(year %in% c(start_y, end_y)) %>%
+    select(
+      fips, state, county, year,
+      median_hh_income_real, all_of(outcome),
+      income_quintile_state
+    ) %>%
+    pivot_wider(
+      names_from = year,
+      values_from = c(median_hh_income_real, all_of(outcome), income_quintile_state),
+      names_sep = "_"
+    ) %>%
+    filter(
+      !is.na(.data[[paste0("median_hh_income_real_", start_y)]]),
+      !is.na(.data[[paste0("median_hh_income_real_", end_y)]]),
+      !is.na(.data[[paste0(outcome, "_", start_y)]]),
+      !is.na(.data[[paste0(outcome, "_", end_y)]])
+    )
+
+  if (nrow(tmp) == 0) {
+    return(invisible(NULL))
+  }
+
+  p <- ggplot(tmp) +
+    geom_segment(
+      aes(
+        x = .data[[paste0("median_hh_income_real_", start_y)]],
+        y = .data[[paste0(outcome, "_", start_y)]],
+        xend = .data[[paste0("median_hh_income_real_", end_y)]],
+        yend = .data[[paste0(outcome, "_", end_y)]]
+      ),
+      arrow = arrow(length = unit(0.08, "inches")),
+      alpha = 0.45
+    ) +
+    geom_point(
+      aes(
+        x = .data[[paste0("median_hh_income_real_", end_y)]],
+        y = .data[[paste0(outcome, "_", end_y)]],
+        color = factor(.data[[paste0("income_quintile_state_", end_y)]])
+      ),
+      size = 1.2
+    ) +
+    scale_x_continuous(labels = scales::label_dollar()) +
+    labs(
+      title = paste(outcome, "movement:", start_y, "to", end_y, "- q_state (non-log income)"),
+      x = paste0("median household income (", income_base_year, " dollars), ", start_y, " to ", end_y),
+      y = paste0(outcome, ", ", start_y, " to ", end_y),
+      color = "state quintile"
+    ) +
+    theme_minimal(base_size = 11)
+
+  save_plot(
+    paste0("vector_", outcome, "_q_state_", start_y, "_", end_y, "_nonlog_income.png"),
+    { print(p) },
+    width = 1800,
+    height = 1200
+  )
+}
+
+plot_national_election_years_nonlog_income <- function(df, outcome, color_var) {
+  years_keep <- c(2012, 2016, 2020)
+  d <- df %>%
+    filter(
+      year %in% years_keep,
+      !is.na(.data[[outcome]]),
+      is.finite(median_hh_income_real),
+      !is.na(.data[[color_var]])
+    )
+
+  if (nrow(d) == 0) {
+    return(invisible(NULL))
+  }
+
+  quintile_lines <- d %>%
+    group_by(year) %>%
+    summarise(
+      q20 = quantile(median_hh_income_real, 0.2, na.rm = TRUE),
+      q40 = quantile(median_hh_income_real, 0.4, na.rm = TRUE),
+      q60 = quantile(median_hh_income_real, 0.6, na.rm = TRUE),
+      q80 = quantile(median_hh_income_real, 0.8, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    pivot_longer(cols = c(q20, q40, q60, q80), names_to = "q", values_to = "cutoff")
+
+  p <- ggplot(d, aes(x = median_hh_income_real, y = .data[[outcome]], color = .data[[color_var]])) +
+    geom_point(alpha = 0.6, size = 0.8) +
+    geom_smooth(method = "lm", formula = fit_formula, se = FALSE, color = "black", linewidth = 0.7) +
+    geom_vline(
+      data = quintile_lines,
+      aes(xintercept = cutoff),
+      linetype = "dashed",
+      color = "grey35",
+      linewidth = 0.4
+    ) +
+    scale_x_continuous(labels = scales::label_dollar()) +
+    facet_wrap(~year, ncol = 3) +
+    labs(
+      title = paste("National counties:", outcome, "-", color_var, "(election years, non-log income)"),
+      x = paste0("median household income (", income_base_year, " dollars)"),
+      y = outcome,
+      color = color_var
+    ) +
+    theme_minimal(base_size = 11)
+
+  if (color_var %in% c("vote_margin", "vote_spread_norm")) {
+    p <- p + scale_color_gradient2(low = "red", mid = "white", high = "blue", midpoint = 0, na.value = "grey70")
+  } else {
+    p <- p + scale_color_gradient(low = "red", high = "blue", na.value = "grey70")
+  }
+
+  save_plot(
+    paste0("national_election_years_", outcome, "_", color_var, "_nonlog_income.png"),
+    { print(p) },
+    width = 2200,
+    height = 900
+  )
+}
+
+plot_vector_nonlog_income(lfpr_panel, "lfpr_total", "q_state")
+for (outcome in c("lfpr_total", "lfpr_gap")) {
+  plot_national_election_years_nonlog_income(lfpr_panel, outcome, "vote_spread_norm")
+  plot_national_election_years_nonlog_income(lfpr_panel, outcome, "vote_margin")
+  plot_national_election_years_nonlog_income(lfpr_panel, outcome, "rep_percent")
+  plot_national_election_years_nonlog_income(lfpr_panel, outcome, "dem_percent")
 }
 
 message("Pipeline complete.")
