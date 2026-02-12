@@ -48,6 +48,9 @@ labor force participation over time in the country.
    - Run `lfpr-panel-analysis.R` to pull ACS county LFPR + household income panel, merge presidential vote data with LOCF, run yearly linear/quadratic models, and generate plots.
    - Outputs are date-prefixed as `YYYY-MM-DD_*`.
    - Current default panel window is endpoint years `2010:2020`.
+6. Run grouping analysis:
+   - Run `lfpr-groupings.R` to build county-year political-income group indicators, compute summary statistics (overall and by year), and generate group-focused visuals.
+   - Outputs are date-prefixed as `YYYY-MM-DD_*`.
 
 #### LFPR panel notes
 - Script: `lfpr-panel-analysis.R`
@@ -59,10 +62,15 @@ labor force participation over time in the country.
 - LFPR construction:
   - built from ACS detailed table `B23001` (sex-by-age-by-employment counts)
   - computes 20-64 LFPR as count-based rates, consistent across years
-- Income regressor: `log(median_hh_income)` (ACS `B19013_001`)
+- Income source: ACS `B19013_001` (median household income)
+- Real-value conversion:
+  - nominal ACS income is CPI-adjusted using annual `R-CPI-U-RS`
+  - values are rebased to `income_base_year` (current script default: 2023 dollars)
+  - regression/plot income axis uses `log(median_hh_income_real)`
 - Election overlays:
   - `vote_margin`
   - `vote_spread`
+  - `vote_spread_norm` (within-year signed normalization for comparable color scales)
   - non-election years are filled using last observation carried forward (LOCF)
 - Income groups:
   - `income_quintile_national` (within year, national distribution)
@@ -77,15 +85,20 @@ labor force participation over time in the country.
 - Models are run separately by year for each outcome with:
   - linear: `y ~ log_income`
   - quadratic: `y ~ log_income + I(log_income^2)`
-- Plot families generated:
-  - state-level yearly facets (`5x2` for `2010:2020`) per outcome
-  - color variants by `vote_margin`, `vote_spread`, national quintile, state quintile
-  - vector movement plots from 2010 to 2020
-  - national election-year comparison facets (`2012`, `2016`, `2020`) with vertical national income quintile cutoff lines and color by:
-    - `vote_spread`
-    - `vote_margin`
-    - `rep_percent`
-    - `dem_percent`
+- Graphics are organized broadly into:
+  - baseline model visuals:
+    - county scatter + fitted curves by outcome/year
+    - state-by-year facet panels
+  - election-overlay visuals:
+    - county scatter/facet panels colored by vote metrics (`vote_margin`, `vote_spread_norm`, party shares)
+    - national election-year comparison (`2012`, `2016`, `2020`) with national quintile cutoff lines
+  - change-over-time visuals:
+    - 2010 to 2020 county movement vector plots
+  - grouping diagnostics and comparisons (`lfpr-groupings.R`):
+    - boxplots by group
+    - group time-trend plots with uncertainty bands
+    - grouped income-vs-LFPR scatters (pooled and faceted by year)
+    - male-vs-female LFPR overlays by group
 
 #### Expected external files
 Place these in `<external_data_root>/data/` (Dropbox):
@@ -100,9 +113,12 @@ Place these in `<external_data_root>/data/` (Dropbox):
 
 #### Panel outputs
 - `data/processed/panel/YYYY-MM-DD_lfpr_panel.csv`
+- `data/processed/panel/YYYY-MM-DD_lfpr_panel_with_groups.csv`
 - `data/processed/results/YYYY-MM-DD_lfpr_model_summary.csv`
 - `data/processed/results/YYYY-MM-DD_lfpr_model_coefficients.csv`
 - `data/processed/results/YYYY-MM-DD_lfpr_model_tables.tex`
+- `data/processed/results/YYYY-MM-DD_lfpr_group_stats.csv`
+- `data/processed/results/YYYY-MM-DD_lfpr_group_year_stats.csv`
 - `data/graphs/YYYY-MM-DD_*.png`
 
 #### Data and reference sources
