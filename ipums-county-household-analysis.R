@@ -204,7 +204,9 @@ if (file.exists(pair_file)) {
 }
 
 conditional_yearly <- list()
+scatter_samples <- list()
 first_write <- TRUE
+set.seed(42)
 
 for (yr in years_keep) {
   message("Building spouse-pair households for year ", yr)
@@ -212,7 +214,7 @@ for (yr in years_keep) {
   pair_sql <- paste0(
     "WITH base AS (",
     "  SELECT YEAR, SAMPLE, SERIAL, PERNUM, STATEICP, COUNTYICP, AGE, SEX, SPLOC, HHWT, HHINCOME,",
-    "         EMPSTAT, UHRSWORK, WKSWORK1, INCWAGE, INCTOT ",
+    "         EMPSTAT, UHRSWORK, WKSWORK1, INCWAGE, INCTOT, INCSS, INCWELFR ",
     "  FROM ipums_table ",
     "  WHERE YEAR = ", yr, " ",
     "    AND STATEICP IS NOT NULL ",
@@ -230,6 +232,13 @@ for (yr in years_keep) {
     "  JOIN hh_screen h ",
     "    ON b.YEAR=h.YEAR AND b.SAMPLE=h.SAMPLE AND b.SERIAL=h.SERIAL ",
     "  WHERE b.AGE BETWEEN ", spouse_age_min, " AND ", spouse_age_max,
+    "), hh_transfers AS (",
+    "  SELECT ",
+    "    YEAR, SAMPLE, SERIAL,",
+    "    SUM(CASE WHEN INCSS IS NOT NULL AND INCSS > 0 THEN INCSS ELSE 0 END) +",
+    "    SUM(CASE WHEN INCWELFR IS NOT NULL AND INCWELFR > 0 THEN INCWELFR ELSE 0 END) AS hh_transfer_income ",
+    "  FROM base ",
+    "  GROUP BY YEAR, SAMPLE, SERIAL",
     "), hh_pairs AS (",
     "  SELECT ",
     "    YEAR, SAMPLE, SERIAL,",
@@ -252,14 +261,20 @@ for (yr in years_keep) {
     "    MAX(CASE WHEN SEX = 2 THEN INCWAGE END) AS female_incwage,",
     "    MAX(CASE WHEN SEX = 1 THEN INCWAGE END) AS male_incwage,",
     "    MAX(CASE WHEN SEX = 2 THEN INCTOT END) AS female_inctot,",
-    "    MAX(CASE WHEN SEX = 1 THEN INCTOT END) AS male_inctot ",
+    "    MAX(CASE WHEN SEX = 1 THEN INCTOT END) AS male_inctot,",
+    "    MAX(CASE WHEN SEX = 2 THEN INCSS END) AS female_incss,",
+    "    MAX(CASE WHEN SEX = 1 THEN INCSS END) AS male_incss,",
+    "    MAX(CASE WHEN SEX = 2 THEN INCWELFR END) AS female_incwelfr,",
+    "    MAX(CASE WHEN SEX = 1 THEN INCWELFR END) AS male_incwelfr ",
     "  FROM adults ",
     "  GROUP BY YEAR, SAMPLE, SERIAL ",
     "  HAVING SUM(CASE WHEN SEX = 2 THEN 1 ELSE 0 END) = 1 ",
     "     AND SUM(CASE WHEN SEX = 1 THEN 1 ELSE 0 END) = 1",
     "), pairs AS (",
-    "  SELECT * ",
-    "  FROM hh_pairs ",
+    "  SELECT p.*, t.hh_transfer_income ",
+    "  FROM hh_pairs p ",
+    "  JOIN hh_transfers t ",
+    "    ON p.YEAR=t.YEAR AND p.SAMPLE=t.SAMPLE AND p.SERIAL=t.SERIAL ",
     "  WHERE female_sploc = male_pernum ",
     "    AND male_sploc = female_pernum",
     ") ",
@@ -267,7 +282,8 @@ for (yr in years_keep) {
     "  YEAR, SAMPLE, SERIAL, STATEICP, COUNTYICP, HHWT, HHINCOME,",
     "  female_pernum, male_pernum, female_empstat, male_empstat,",
     "  female_uhrswork_raw, male_uhrswork_raw, female_wkswork1_raw, male_wkswork1_raw,",
-    "  female_incwage, male_incwage, female_inctot, male_inctot ",
+    "  female_incwage, male_incwage, female_inctot, male_inctot,",
+    "  female_incss, male_incss, female_incwelfr, male_incwelfr, hh_transfer_income ",
     "FROM pairs"
   )
 
@@ -284,10 +300,18 @@ for (yr in years_keep) {
       male_income_total_nonneg = pmax(male_inctot, 0, na.rm = FALSE),
       female_income_wage_nonneg = pmax(female_incwage, 0, na.rm = FALSE),
       male_income_wage_nonneg = pmax(male_incwage, 0, na.rm = FALSE),
+      female_transfer_income_nonneg = pmax(female_incss, 0, na.rm = FALSE) + pmax(female_incwelfr, 0, na.rm = FALSE),
+      male_transfer_income_nonneg = pmax(male_incss, 0, na.rm = FALSE) + pmax(male_incwelfr, 0, na.rm = FALSE),
+      household_transfer_income_nonneg = pmax(hh_transfer_income, 0, na.rm = FALSE),
+      female_income_no_transfers = pmax(female_income_total_nonneg - female_transfer_income_nonneg, 0, na.rm = FALSE),
+      male_income_no_transfers = pmax(male_income_total_nonneg - male_transfer_income_nonneg, 0, na.rm = FALSE),
+      household_income_no_transfers = ifelse(hhincome_nominal > 0, pmax(hhincome_nominal - household_transfer_income_nonneg, 0), NA_real_),
       female_share_hh_income_total = ifelse(hhincome_nominal > 0, female_income_total_nonneg / hhincome_nominal, NA_real_),
       male_share_hh_income_total = ifelse(hhincome_nominal > 0, male_income_total_nonneg / hhincome_nominal, NA_real_),
       female_share_hh_income_wage = ifelse(hhincome_nominal > 0, female_income_wage_nonneg / hhincome_nominal, NA_real_),
       male_share_hh_income_wage = ifelse(hhincome_nominal > 0, male_income_wage_nonneg / hhincome_nominal, NA_real_),
+      female_share_hh_income_no_transfers = ifelse(household_income_no_transfers > 0, female_income_no_transfers / household_income_no_transfers, NA_real_),
+      male_share_hh_income_no_transfers = ifelse(household_income_no_transfers > 0, male_income_no_transfers / household_income_no_transfers, NA_real_),
       male_only_earner = as.integer(coalesce(female_income_wage_nonneg <= 0 & male_income_wage_nonneg > 0, FALSE)),
       female_only_earner = as.integer(coalesce(male_income_wage_nonneg <= 0 & female_income_wage_nonneg > 0, FALSE)),
       dual_earner = as.integer(coalesce(male_income_wage_nonneg > 0 & female_income_wage_nonneg > 0, FALSE))
@@ -305,8 +329,22 @@ for (yr in years_keep) {
       hours_gap_weekly_female_minus_male = female_weekly_hours - male_weekly_hours,
       hours_gap_annual_female_minus_male = female_annual_hours - male_annual_hours,
       income_share_gap_total_female_minus_male = female_share_hh_income_total - male_share_hh_income_total,
-      income_share_gap_wage_female_minus_male = female_share_hh_income_wage - male_share_hh_income_wage
+      income_share_gap_wage_female_minus_male = female_share_hh_income_wage - male_share_hh_income_wage,
+      income_gap_no_transfers_female_minus_male = female_income_no_transfers - male_income_no_transfers,
+      income_share_gap_no_transfers_female_minus_male = female_share_hh_income_no_transfers - male_share_hh_income_no_transfers
     )
+
+  scatter_n <- min(6000L, nrow(pairs_year))
+  if (scatter_n > 0) {
+    scatter_samples[[as.character(yr)]] <- pairs_year %>%
+      filter(
+        !is.na(hhincome_nominal),
+        !is.na(male_income_no_transfers),
+        hhincome_nominal > 0
+      ) %>%
+      sample_n(size = min(scatter_n, n()), replace = FALSE) %>%
+      select(YEAR, income_quintile, hhincome_nominal, household_income_no_transfers, male_income_no_transfers)
+  }
 
   write_csv_append(pairs_year, pair_file, first_write = first_write)
   first_write <- FALSE
@@ -326,6 +364,12 @@ for (yr in years_keep) {
       male_share_hh_income_total_mean = weighted_mean_safe(male_share_hh_income_total, HHWT),
       female_share_hh_income_wage_mean = weighted_mean_safe(female_share_hh_income_wage, HHWT),
       male_share_hh_income_wage_mean = weighted_mean_safe(male_share_hh_income_wage, HHWT),
+      female_income_no_transfers_mean = weighted_mean_safe(female_income_no_transfers, HHWT),
+      male_income_no_transfers_mean = weighted_mean_safe(male_income_no_transfers, HHWT),
+      household_income_nominal_mean = weighted_mean_safe(hhincome_nominal, HHWT),
+      household_income_no_transfers_mean = weighted_mean_safe(household_income_no_transfers, HHWT),
+      female_share_hh_income_no_transfers_mean = weighted_mean_safe(female_share_hh_income_no_transfers, HHWT),
+      male_share_hh_income_no_transfers_mean = weighted_mean_safe(male_share_hh_income_no_transfers, HHWT),
       male_only_earner_share = weighted_mean_safe(male_only_earner, HHWT),
       female_only_earner_share = weighted_mean_safe(female_only_earner, HHWT),
       dual_earner_share = weighted_mean_safe(dual_earner, HHWT),
@@ -358,6 +402,12 @@ conditional_pooled <- conditional_by_year %>%
     male_share_hh_income_total_mean = weighted_mean_safe(male_share_hh_income_total_mean, households_wt),
     female_share_hh_income_wage_mean = weighted_mean_safe(female_share_hh_income_wage_mean, households_wt),
     male_share_hh_income_wage_mean = weighted_mean_safe(male_share_hh_income_wage_mean, households_wt),
+    female_income_no_transfers_mean = weighted_mean_safe(female_income_no_transfers_mean, households_wt),
+    male_income_no_transfers_mean = weighted_mean_safe(male_income_no_transfers_mean, households_wt),
+    household_income_nominal_mean = weighted_mean_safe(household_income_nominal_mean, households_wt),
+    household_income_no_transfers_mean = weighted_mean_safe(household_income_no_transfers_mean, households_wt),
+    female_share_hh_income_no_transfers_mean = weighted_mean_safe(female_share_hh_income_no_transfers_mean, households_wt),
+    male_share_hh_income_no_transfers_mean = weighted_mean_safe(male_share_hh_income_no_transfers_mean, households_wt),
     male_only_earner_share = weighted_mean_safe(male_only_earner_share, households_wt),
     female_only_earner_share = weighted_mean_safe(female_only_earner_share, households_wt),
     dual_earner_share = weighted_mean_safe(dual_earner_share, households_wt),
@@ -376,6 +426,20 @@ conditional_out <- bind_rows(
 
 conditional_file <- file.path(results_dir, "ipums_conditional_spouse_hours_income_quintile.csv")
 write_csv(conditional_out, conditional_file)
+
+if (length(scatter_samples) > 0) {
+  scatter_sample_out <- bind_rows(scatter_samples)
+} else {
+  scatter_sample_out <- tibble(
+    YEAR = integer(),
+    income_quintile = integer(),
+    hhincome_nominal = numeric(),
+    household_income_no_transfers = numeric(),
+    male_income_no_transfers = numeric()
+  )
+}
+scatter_sample_file <- file.path(results_dir, "ipums_household_income_vs_male_income_no_transfers_scatter_sample.csv")
+write_csv(scatter_sample_out, scatter_sample_file)
 
 # =========================================================
 # 5) Graphs
@@ -466,6 +530,61 @@ p_share_wage <- ggplot(share_long_wage, aes(x = year, y = share, color = sex)) +
   theme_minimal(base_size = 11)
 save_plot("ipums_spouse_income_share_wage_over_time_by_income_quintile.png", { print(p_share_wage) }, width = 2200, height = 1400)
 
+p_income_no_transfer <- cond_year %>%
+  select(year, income_quintile, female_income_no_transfers_mean, male_income_no_transfers_mean) %>%
+  pivot_longer(
+    cols = c(female_income_no_transfers_mean, male_income_no_transfers_mean),
+    names_to = "sex",
+    values_to = "income_no_transfers"
+  ) %>%
+  mutate(
+    sex = recode(
+      sex,
+      female_income_no_transfers_mean = "Female",
+      male_income_no_transfers_mean = "Male"
+    )
+  ) %>%
+  ggplot(aes(x = year, y = income_no_transfers, color = sex)) +
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 1.5) +
+  facet_wrap(~income_quintile, ncol = 3) +
+  labs(
+    title = "Spouse personal income (no transfers) over time by income quintile",
+    x = "Year",
+    y = "Income (nominal dollars)",
+    color = "Sex"
+  ) +
+  theme_minimal(base_size = 11)
+save_plot("ipums_spouse_personal_income_no_transfers_over_time_by_income_quintile.png", { print(p_income_no_transfer) }, width = 2200, height = 1400)
+
+share_long_no_transfer <- cond_year %>%
+  select(year, income_quintile, female_share_hh_income_no_transfers_mean, male_share_hh_income_no_transfers_mean) %>%
+  pivot_longer(
+    cols = c(female_share_hh_income_no_transfers_mean, male_share_hh_income_no_transfers_mean),
+    names_to = "sex",
+    values_to = "share"
+  ) %>%
+  mutate(
+    sex = recode(
+      sex,
+      female_share_hh_income_no_transfers_mean = "Female",
+      male_share_hh_income_no_transfers_mean = "Male"
+    )
+  )
+
+p_share_no_transfer <- ggplot(share_long_no_transfer, aes(x = year, y = share, color = sex)) +
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 1.5) +
+  facet_wrap(~income_quintile, ncol = 3) +
+  labs(
+    title = "Spouse share of household income (no transfers) over time by income quintile",
+    x = "Year",
+    y = "Share of household income (no transfers)",
+    color = "Sex"
+  ) +
+  theme_minimal(base_size = 11)
+save_plot("ipums_spouse_income_share_no_transfers_over_time_by_income_quintile.png", { print(p_share_no_transfer) }, width = 2200, height = 1400)
+
 p_gap <- ggplot(cond_year, aes(x = year, y = weekly_hours_gap_female_minus_male, color = factor(income_quintile))) +
   geom_line(linewidth = 0.9) +
   geom_point(size = 1.5) +
@@ -540,7 +659,38 @@ p_county <- ggplot(county_long, aes(x = year, y = value, color = metric)) +
   theme_minimal(base_size = 11)
 save_plot("ipums_county_population_weighted_lfpr_trends.png", { print(p_county) }, width = 1800, height = 1100)
 
+if (nrow(scatter_sample_out) > 0) {
+  x_cap <- suppressWarnings(as.numeric(quantile(scatter_sample_out$hhincome_nominal, probs = 0.99, na.rm = TRUE)))
+  y_cap <- suppressWarnings(as.numeric(quantile(scatter_sample_out$male_income_no_transfers, probs = 0.99, na.rm = TRUE)))
+
+  p_scatter <- ggplot(
+    scatter_sample_out,
+    aes(x = hhincome_nominal, y = male_income_no_transfers)
+  ) +
+    geom_point(alpha = 0.08, size = 0.6, color = "#1f77b4") +
+    coord_cartesian(
+      xlim = c(0, x_cap),
+      ylim = c(0, y_cap)
+    ) +
+    labs(
+      title = "Male spouse personal income (no transfers) vs household income",
+      subtitle = "Scatter uses a random sample of spouse-pair households; axes clipped at 99th percentile",
+      x = "Household income (nominal dollars)",
+      y = "Male spouse personal income, no transfers (nominal dollars)"
+    ) +
+    theme_minimal(base_size = 11)
+
+  save_plot("ipums_scatter_household_income_vs_male_income_no_transfers.png", { print(p_scatter) }, width = 1800, height = 1200)
+}
+
 message("IPUMS county-household pipeline complete.")
 message("County metrics file: ", county_file)
 message("Spouse pair file: ", pair_file)
 message("Conditional file: ", conditional_file)
+message("Scatter sample file: ", scatter_sample_file)
+
+run_extended_suite <- tolower(Sys.getenv("RUN_IPUMS_MARRIED_SUITE", "true")) == "true"
+if (run_extended_suite) {
+  message("Running extended married-household suite...")
+  source("ipums-married-household-suite.R")
+}
