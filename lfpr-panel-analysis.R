@@ -51,32 +51,40 @@ ensure_dir(results_dir)
 # Build consistent 20-64 LFPR from detailed counts in B23001:
 # LFPR = (in labor force count / total population count) * 100
 # This avoids subject-table definition shifts across years.
-# B23003: Presence of Own Children Under 6 Years by Employment Status, Females 16+
-# Returns variable IDs for the county-level mother LFPR pull.
-# NOTE: covers women 16+, not 20-64 — slight age mismatch vs B23001 series (unavoidable in ACS).
+# B23003: Presence of Own Children Under 18 by Age Group and Employment Status, Females 16+
+# Structure (stable across ACS 5-year 2010-present):
+#   _002  With any children under 18 (total)
+#   _003    Under 6 only (denom for lfpr_female_kids_u6 partial)
+#   _004      Under 6 only: In labor force
+#   _009      Under 6 only: Not in labor force
+#   _010    Under 6 AND 6-17 (denom for lfpr_female_kids_u6 partial)
+#   _011      Under 6 and 6-17: In labor force
+#   _017    6-17 only (denom for lfpr_female_kids_6_17)
+#   _018      6-17 only: In labor force
+#   _024  No children under 18 (denom for lfpr_female_no_kids)
+#   _025    No children: In labor force
+# NOTE: covers women 16+, not 20-64 — slight age mismatch vs B23001 (unavoidable in ACS).
 get_b23003_kids_var_ids <- function(year, survey = "acs5") {
-  vars <- load_variables(year, survey, cache = TRUE) %>%
-    filter(str_detect(name, "^B23003_")) %>%
-    select(name, label)
-
-  # Denominator: all women with own children under 6 (direct subtotal, no LF split)
-  denom_id <- vars %>%
-    filter(str_detect(label, "Living with own children under 6") &
-           !str_detect(label, "In labor force|Not in labor force")) %>%
+  expected <- c("B23003_002","B23003_003","B23003_004",
+                "B23003_010","B23003_011",
+                "B23003_017","B23003_018",
+                "B23003_024","B23003_025")
+  avail <- load_variables(year, survey, cache = TRUE) %>%
+    filter(name %in% expected) %>%
     pull(name)
 
-  # Numerator: women with own children under 6 AND in labor force (direct total, not sub-rows)
-  num_id <- vars %>%
-    filter(str_detect(label, "Living with own children under 6") &
-           str_detect(label, "!!In labor force$")) %>%
-    pull(name)
-
-  if (length(denom_id) == 0 || length(num_id) == 0) {
-    message("B23003 variable mapping failed for year ", year,
-            " — lfpr_female_kids_u6 will remain NA.")
+  if (!all(expected %in% avail)) {
+    message("B23003 variables not fully available for year ", year,
+            " — kids LFPR columns will be NA.")
     return(NULL)
   }
-  list(denom = denom_id[1], num = num_id[1])
+  list(
+    kids_any_denom    = "B23003_002",
+    kids_u6_only_denom = "B23003_003", kids_u6_only_num = "B23003_004",
+    kids_both_denom   = "B23003_010", kids_both_num    = "B23003_011",
+    kids_617_denom    = "B23003_017", kids_617_num     = "B23003_018",
+    no_kids_denom     = "B23003_024", no_kids_num      = "B23003_025"
+  )
 }
 
 get_b23001_lfpr_var_ids <- function(year, survey = "acs5") {
@@ -126,7 +134,7 @@ pull_lfpr_income_panel <- function(years = 2010:2020, survey = "acs5") {
     kids_ids <- get_b23003_kids_var_ids(y, survey = survey)
 
     # Collect all variable IDs for a single get_acs call
-    b23003_ids <- if (!is.null(kids_ids)) c(kids_ids$denom, kids_ids$num) else character(0)
+    b23003_ids <- if (!is.null(kids_ids)) unlist(kids_ids) else character(0)
 
     var_ids <- unique(c(
       income_var,
@@ -149,14 +157,16 @@ pull_lfpr_income_panel <- function(years = 2010:2020, survey = "acs5") {
       output = "wide"
     )
 
-    male_denom_cols  <- paste0(ids$male_denom,   "E")
-    male_num_cols    <- paste0(ids$male_num,      "E")
-    female_denom_cols <- paste0(ids$female_denom, "E")
-    female_num_cols  <- paste0(ids$female_num,    "E")
+    male_denom_cols   <- paste0(ids$male_denom,   "E")
+    male_num_cols     <- paste0(ids$male_num,      "E")
+    female_denom_cols <- paste0(ids$female_denom,  "E")
+    female_num_cols   <- paste0(ids$female_num,    "E")
 
-    # B23003: LFPR among mothers of children under 6 (women 16+; note age floor differs from B23001)
-    kids_u6_denom_col <- if (!is.null(kids_ids)) paste0(kids_ids$denom, "E") else NULL
-    kids_u6_num_col   <- if (!is.null(kids_ids)) paste0(kids_ids$num,   "E") else NULL
+    # Helper: safely pull a B23003 column, returning NA if absent
+    b23_col <- function(id) {
+      col <- paste0(id, "E")
+      if (!is.null(kids_ids) && col %in% names(acs_pull)) acs_pull[[col]] else NA_real_
+    }
 
     out <- acs_pull %>%
       mutate(
@@ -164,10 +174,15 @@ pull_lfpr_income_panel <- function(years = 2010:2020, survey = "acs5") {
         male_num     = rowSums(across(all_of(male_num_cols)),     na.rm = TRUE),
         female_denom = rowSums(across(all_of(female_denom_cols)), na.rm = TRUE),
         female_num   = rowSums(across(all_of(female_num_cols)),   na.rm = TRUE),
-        kids_u6_denom = if (!is.null(kids_u6_denom_col) && kids_u6_denom_col %in% names(.))
-                          .data[[kids_u6_denom_col]] else NA_real_,
-        kids_u6_num   = if (!is.null(kids_u6_num_col)   && kids_u6_num_col   %in% names(.))
-                          .data[[kids_u6_num_col]]   else NA_real_
+        # B23003 denominators and numerators (all NA when kids_ids is NULL)
+        kids_any_d    = b23_col("B23003_002"),
+        kids_u6_d     = b23_col("B23003_003") + b23_col("B23003_010"),  # u6-only + u6&617
+        kids_u6_n     = b23_col("B23003_004") + b23_col("B23003_011"),
+        kids_u6_17_d  = b23_col("B23003_003") + b23_col("B23003_010") + b23_col("B23003_017"),
+        kids_u6_17_n  = b23_col("B23003_004") + b23_col("B23003_011") + b23_col("B23003_018"),
+        kids_617_d    = b23_col("B23003_017"),
+        kids_617_n    = b23_col("B23003_018"),
+        kids_any_n    = b23_col("B23003_004") + b23_col("B23003_011") + b23_col("B23003_018")
       ) %>%
       transmute(
         year   = y,
@@ -181,16 +196,11 @@ pull_lfpr_income_panel <- function(years = 2010:2020, survey = "acs5") {
           100 * (male_num + female_num) / (male_denom + female_denom),
           NA_real_
         ),
-        # B23003: mothers of children under 6 (women 16+; age floor mismatch noted)
-        lfpr_female_kids_u6 = ifelse(
-          !is.na(kids_u6_denom) & kids_u6_denom > 0,
-          100 * kids_u6_num / kids_u6_denom,
-          NA_real_
-        ),
-        # kids 6-17 and "any children" require IPUMS microdata — see ipums-county-household-analysis.R
-        lfpr_female_kids      = NA_real_,
-        lfpr_female_kids_u6_17 = NA_real_,
-        lfpr_female_kids_6_17  = NA_real_,
+        # B23003-derived LFPR; women 16+ (age floor differs from B23001's 20-64)
+        lfpr_female_kids_u6    = ifelse(!is.na(kids_u6_d)   & kids_u6_d   > 0, 100 * kids_u6_n   / kids_u6_d,   NA_real_),
+        lfpr_female_kids_u6_17 = ifelse(!is.na(kids_u6_17_d) & kids_u6_17_d > 0, 100 * kids_u6_17_n / kids_u6_17_d, NA_real_),
+        lfpr_female_kids_6_17  = ifelse(!is.na(kids_617_d)  & kids_617_d  > 0, 100 * kids_617_n  / kids_617_d,  NA_real_),
+        lfpr_female_kids       = ifelse(!is.na(kids_any_d)  & kids_any_d  > 0, 100 * kids_any_n  / kids_any_d,  NA_real_),
         median_hh_income = median_hh_incomeE,
         source = paste0("ACS_", survey, "_B23001_B19013_B23003")
       ) %>%
