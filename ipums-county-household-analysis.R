@@ -172,6 +172,106 @@ county_file <- file.path(panel_dir, "ipums_county_sex_lfpr_hours.csv")
 write_csv(county_df, county_file)
 message("County-level LFPR/hours panel written: ", county_file)
 
+# =========================================================
+# 3b) Female LFPR by child presence (all women 20-64, not just spouse pairs)
+# =========================================================
+# Uses YNGCH (youngest own child age): 0-5 = child under 6; 6-17 = child 6-17; 99 = no children.
+# This is the IPUMS counterpart to ACS B23003, with the advantage of exact age control (20-64)
+# and the ability to split by income quintile in the suite script.
+# Note: YNGCH is the youngest OWN child present in the household — it does not capture
+# non-own children (e.g., grandchildren, step-children without formal adoption).
+
+kids_sql <- paste0(
+  "WITH base AS (",
+  "  SELECT YEAR, STATEICP, COUNTYICP, PERWT, EMPSTAT, YNGCH ",
+  "  FROM ipums_table ",
+  "  WHERE YEAR IN (", year_list_sql, ") ",
+  "    AND SEX = 2 ",
+  "    AND AGE BETWEEN ", county_age_min, " AND ", county_age_max, " ",
+  "    AND STATEICP IS NOT NULL ",
+  "    AND COUNTYICP IS NOT NULL ",
+  "    AND GQ IN (1, 2) ",
+  "), agg AS (",
+  "  SELECT YEAR, STATEICP, COUNTYICP,",
+  # All women 20-64 (denominator / numerator for overall LFPR — matches county_df)
+  "    SUM(PERWT) AS fem_pop,",
+  "    SUM(CASE WHEN EMPSTAT IN (1,2) THEN PERWT ELSE 0 END) AS fem_lf,",
+  # Children under 6 (YNGCH 0-5)
+  "    SUM(CASE WHEN YNGCH BETWEEN 0 AND 5 THEN PERWT ELSE 0 END) AS kids_u6_pop,",
+  "    SUM(CASE WHEN YNGCH BETWEEN 0 AND 5 AND EMPSTAT IN (1,2) THEN PERWT ELSE 0 END) AS kids_u6_lf,",
+  # Children 6-17 only (youngest child is 6-17, no child under 6)
+  "    SUM(CASE WHEN YNGCH BETWEEN 6 AND 17 THEN PERWT ELSE 0 END) AS kids_6_17_pop,",
+  "    SUM(CASE WHEN YNGCH BETWEEN 6 AND 17 AND EMPSTAT IN (1,2) THEN PERWT ELSE 0 END) AS kids_6_17_lf,",
+  # Any own children under 18 (YNGCH 0-17)
+  "    SUM(CASE WHEN YNGCH BETWEEN 0 AND 17 THEN PERWT ELSE 0 END) AS kids_any_pop,",
+  "    SUM(CASE WHEN YNGCH BETWEEN 0 AND 17 AND EMPSTAT IN (1,2) THEN PERWT ELSE 0 END) AS kids_any_lf,",
+  # No own children (YNGCH = 99)
+  "    SUM(CASE WHEN YNGCH = 99 THEN PERWT ELSE 0 END) AS no_kids_pop,",
+  "    SUM(CASE WHEN YNGCH = 99 AND EMPSTAT IN (1,2) THEN PERWT ELSE 0 END) AS no_kids_lf ",
+  "  FROM base ",
+  "  GROUP BY YEAR, STATEICP, COUNTYICP",
+  ") SELECT * FROM agg"
+)
+
+kids_df <- dbGetQuery(con, kids_sql) %>%
+  mutate(
+    lfpr_female_kids_u6   = ifelse(kids_u6_pop   > 0, 100 * kids_u6_lf   / kids_u6_pop,   NA_real_),
+    lfpr_female_kids_6_17 = ifelse(kids_6_17_pop > 0, 100 * kids_6_17_lf / kids_6_17_pop, NA_real_),
+    lfpr_female_kids_any  = ifelse(kids_any_pop  > 0, 100 * kids_any_lf  / kids_any_pop,  NA_real_),
+    lfpr_female_no_kids   = ifelse(no_kids_pop   > 0, 100 * no_kids_lf   / no_kids_pop,   NA_real_),
+    # Penalty: how many pp lower is LFPR for mothers of u6 vs. no-kids women?
+    lfpr_penalty_kids_u6  = lfpr_female_kids_u6 - lfpr_female_no_kids
+  )
+
+# Validation: child-status groups cover all women (pop weights should sum to fem_pop)
+kids_check <- kids_df %>%
+  mutate(
+    pop_accounted = kids_u6_pop + kids_6_17_pop + no_kids_pop,
+    residual_pct  = 100 * abs(pop_accounted - fem_pop) / pmax(fem_pop, 1)
+  ) %>%
+  summarise(max_residual_pct = max(residual_pct, na.rm = TRUE))
+message("Child-status LFPR validation — max unaccounted pop share: ",
+        round(kids_check$max_residual_pct, 2), "% (non-zero = women with YNGCH not in 0-17 or 99)")
+
+kids_file <- file.path(panel_dir, "ipums_county_female_lfpr_by_child_status.csv")
+write_csv(kids_df, kids_file)
+message("Female LFPR by child status written: ", kids_file)
+
+# National trend: LFPR for mothers of u6 vs. 6-17 vs. no kids (population-weighted)
+kids_national <- kids_df %>%
+  group_by(YEAR) %>%
+  summarise(
+    lfpr_kids_u6_pw   = weighted_mean_safe(lfpr_female_kids_u6,   kids_u6_pop),
+    lfpr_kids_6_17_pw = weighted_mean_safe(lfpr_female_kids_6_17, kids_6_17_pop),
+    lfpr_kids_any_pw  = weighted_mean_safe(lfpr_female_kids_any,  kids_any_pop),
+    lfpr_no_kids_pw   = weighted_mean_safe(lfpr_female_no_kids,   no_kids_pop),
+    .groups = "drop"
+  ) %>%
+  pivot_longer(
+    cols = starts_with("lfpr_"),
+    names_to = "group",
+    values_to = "lfpr"
+  ) %>%
+  mutate(group = recode(group,
+    lfpr_kids_u6_pw   = "Child under 6",
+    lfpr_kids_6_17_pw = "Child 6-17 (youngest)",
+    lfpr_kids_any_pw  = "Any child under 18",
+    lfpr_no_kids_pw   = "No own children"
+  ))
+
+p_kids_trend <- ggplot(kids_national, aes(x = YEAR, y = lfpr, color = group)) +
+  geom_line(linewidth = 1.0) +
+  geom_point(size = 1.8) +
+  labs(
+    title    = "Female LFPR by child presence: all women ages 20-64",
+    subtitle = "IPUMS microdata; county population-weighted national averages",
+    x = "Year", y = "LFPR (%)", color = NULL
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(legend.position = "bottom")
+save_plot("ipums_female_lfpr_by_child_status_trend.png",
+          { print(p_kids_trend) }, width = 1800, height = 1100)
+
 # Population-weighted county summary trends + county spread stats.
 county_summary <- county_df %>%
   group_by(YEAR) %>%

@@ -51,6 +51,34 @@ ensure_dir(results_dir)
 # Build consistent 20-64 LFPR from detailed counts in B23001:
 # LFPR = (in labor force count / total population count) * 100
 # This avoids subject-table definition shifts across years.
+# B23003: Presence of Own Children Under 6 Years by Employment Status, Females 16+
+# Returns variable IDs for the county-level mother LFPR pull.
+# NOTE: covers women 16+, not 20-64 — slight age mismatch vs B23001 series (unavoidable in ACS).
+get_b23003_kids_var_ids <- function(year, survey = "acs5") {
+  vars <- load_variables(year, survey, cache = TRUE) %>%
+    filter(str_detect(name, "^B23003_")) %>%
+    select(name, label)
+
+  # Denominator: all women with own children under 6 (direct subtotal, no LF split)
+  denom_id <- vars %>%
+    filter(str_detect(label, "Living with own children under 6") &
+           !str_detect(label, "In labor force|Not in labor force")) %>%
+    pull(name)
+
+  # Numerator: women with own children under 6 AND in labor force (direct total, not sub-rows)
+  num_id <- vars %>%
+    filter(str_detect(label, "Living with own children under 6") &
+           str_detect(label, "!!In labor force$")) %>%
+    pull(name)
+
+  if (length(denom_id) == 0 || length(num_id) == 0) {
+    message("B23003 variable mapping failed for year ", year,
+            " — lfpr_female_kids_u6 will remain NA.")
+    return(NULL)
+  }
+  list(denom = denom_id[1], num = num_id[1])
+}
+
 get_b23001_lfpr_var_ids <- function(year, survey = "acs5") {
   ages_re <- paste(
     c(
@@ -94,12 +122,17 @@ pull_lfpr_income_panel <- function(years = 2010:2020, survey = "acs5") {
 
   map_dfr(years, function(y) {
     message("Pulling ACS county panel for endpoint year: ", y)
-    ids <- get_b23001_lfpr_var_ids(y, survey = survey)
+    ids     <- get_b23001_lfpr_var_ids(y, survey = survey)
+    kids_ids <- get_b23003_kids_var_ids(y, survey = survey)
+
+    # Collect all variable IDs for a single get_acs call
+    b23003_ids <- if (!is.null(kids_ids)) c(kids_ids$denom, kids_ids$num) else character(0)
 
     var_ids <- unique(c(
       income_var,
       ids$male_denom, ids$male_num,
-      ids$female_denom, ids$female_num
+      ids$female_denom, ids$female_num,
+      b23003_ids
     ))
     var_ids <- var_ids[!is.na(var_ids) & nzchar(var_ids)]
 
@@ -116,40 +149,52 @@ pull_lfpr_income_panel <- function(years = 2010:2020, survey = "acs5") {
       output = "wide"
     )
 
-    male_denom_cols <- paste0(ids$male_denom, "E")
-    male_num_cols <- paste0(ids$male_num, "E")
+    male_denom_cols  <- paste0(ids$male_denom,   "E")
+    male_num_cols    <- paste0(ids$male_num,      "E")
     female_denom_cols <- paste0(ids$female_denom, "E")
-    female_num_cols <- paste0(ids$female_num, "E")
+    female_num_cols  <- paste0(ids$female_num,    "E")
+
+    # B23003: LFPR among mothers of children under 6 (women 16+; note age floor differs from B23001)
+    kids_u6_denom_col <- if (!is.null(kids_ids)) paste0(kids_ids$denom, "E") else NULL
+    kids_u6_num_col   <- if (!is.null(kids_ids)) paste0(kids_ids$num,   "E") else NULL
 
     out <- acs_pull %>%
       mutate(
-        male_denom = rowSums(across(all_of(male_denom_cols)), na.rm = TRUE),
-        male_num = rowSums(across(all_of(male_num_cols)), na.rm = TRUE),
+        male_denom   = rowSums(across(all_of(male_denom_cols)),   na.rm = TRUE),
+        male_num     = rowSums(across(all_of(male_num_cols)),     na.rm = TRUE),
         female_denom = rowSums(across(all_of(female_denom_cols)), na.rm = TRUE),
-        female_num = rowSums(across(all_of(female_num_cols)), na.rm = TRUE)
+        female_num   = rowSums(across(all_of(female_num_cols)),   na.rm = TRUE),
+        kids_u6_denom = if (!is.null(kids_u6_denom_col) && kids_u6_denom_col %in% names(.))
+                          .data[[kids_u6_denom_col]] else NA_real_,
+        kids_u6_num   = if (!is.null(kids_u6_num_col)   && kids_u6_num_col   %in% names(.))
+                          .data[[kids_u6_num_col]]   else NA_real_
       ) %>%
       transmute(
-        year = y,
-        fips = str_pad(GEOID, 5, pad = "0"),
+        year   = y,
+        fips   = str_pad(GEOID, 5, pad = "0"),
         county = toupper(gsub(" COUNTY, .*", "", NAME)),
-        state = toupper(sub(".*, ", "", NAME)),
-        lfpr_male = ifelse(male_denom > 0, 100 * male_num / male_denom, NA_real_),
+        state  = toupper(sub(".*, ", "", NAME)),
+        lfpr_male   = ifelse(male_denom   > 0, 100 * male_num   / male_denom,   NA_real_),
         lfpr_female = ifelse(female_denom > 0, 100 * female_num / female_denom, NA_real_),
-        lfpr_total = ifelse(
+        lfpr_total  = ifelse(
           (male_denom + female_denom) > 0,
           100 * (male_num + female_num) / (male_denom + female_denom),
           NA_real_
         ),
-        lfpr_female_kids = NA_real_,
-        lfpr_female_kids_u6 = NA_real_,
+        # B23003: mothers of children under 6 (women 16+; age floor mismatch noted)
+        lfpr_female_kids_u6 = ifelse(
+          !is.na(kids_u6_denom) & kids_u6_denom > 0,
+          100 * kids_u6_num / kids_u6_denom,
+          NA_real_
+        ),
+        # kids 6-17 and "any children" require IPUMS microdata — see ipums-county-household-analysis.R
+        lfpr_female_kids      = NA_real_,
         lfpr_female_kids_u6_17 = NA_real_,
-        lfpr_female_kids_6_17 = NA_real_,
+        lfpr_female_kids_6_17  = NA_real_,
         median_hh_income = median_hh_incomeE,
-        source = paste0("ACS_", survey, "_B23001_B19013")
+        source = paste0("ACS_", survey, "_B23001_B19013_B23003")
       ) %>%
-      mutate(
-        lfpr_gap = lfpr_male - lfpr_female
-      )
+      mutate(lfpr_gap = lfpr_male - lfpr_female)
 
     out
   })
