@@ -420,3 +420,197 @@ plot_male_female_by_group(
   group_name = "dem_solid_rich",
   filename = "male_female_lfpr_vs_logincome_dem_solid_rich_facet_year.png"
 )
+
+# =========================================================
+# 6) DEPARTURE DESCRIPTIVES: norm × income interaction
+# =========================================================
+# These graphs test whether conservative-leaning counties have lower female
+# LFPR than liberal-leaning counties at equal income levels — the core
+# departure from the standard "economics dominate at high income" story.
+
+# 6a) Among nationally Q5 counties: female LFPR by political lean
+# This holds income constant and isolates the norm effect.
+q5_lean_summary <- lfpr_panel %>%
+  filter(income_quintile_national == 5, !is.na(vote_margin), !is.na(lfpr_female)) %>%
+  mutate(
+    lean = case_when(
+      vote_margin >  0.10 ~ "Strongly Dem (>10pp)",
+      vote_margin >  0.00 ~ "Lean Dem (0-10pp)",
+      vote_margin > -0.10 ~ "Lean Rep (0-10pp)",
+      TRUE                ~ "Strongly Rep (>10pp)"
+    ),
+    lean = factor(lean, levels = c("Strongly Dem (>10pp)", "Lean Dem (0-10pp)",
+                                   "Lean Rep (0-10pp)", "Strongly Rep (>10pp)"))
+  ) %>%
+  group_by(lean) %>%
+  summarise(
+    lfpr_female_mean = mean(lfpr_female, na.rm = TRUE),
+    lfpr_gap_mean    = mean(lfpr_gap,    na.rm = TRUE),
+    n_county_years   = n(),
+    .groups = "drop"
+  )
+
+message("Q5 lean summary (n per cell):")
+print(q5_lean_summary[, c("lean", "n_county_years", "lfpr_female_mean")])
+
+p_q5_lean <- ggplot(q5_lean_summary, aes(x = lean, y = lfpr_female_mean, fill = lean)) +
+  geom_col(width = 0.6) +
+  geom_text(aes(label = sprintf("%.1f%%\nn=%d", lfpr_female_mean, n_county_years)),
+            vjust = -0.4, size = 3.2) +
+  scale_fill_manual(values = c(
+    "Strongly Dem (>10pp)" = "#2166ac",
+    "Lean Dem (0-10pp)"    = "#74add1",
+    "Lean Rep (0-10pp)"    = "#f4a582",
+    "Strongly Rep (>10pp)" = "#d6604d"
+  )) +
+  labs(
+    title    = "Female LFPR in top income quintile (Q5) counties by political lean",
+    subtitle = "Pooled 2010-2020 ACS; income quintile fixed nationally — norm effect at constant income",
+    x        = "Political lean (vote margin direction and magnitude)",
+    y        = "Mean female LFPR (%, ages 20-64)",
+    fill     = NULL
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none", axis.text.x = element_text(size = 9))
+save_plot("departure_q5_female_lfpr_by_political_lean.png",
+          { print(p_q5_lean) }, width = 1800, height = 1200)
+
+# 6b) For all national quintiles: female LFPR by quintile × liberal vs conservative
+# Split counties into two groups by vote_margin sign (Dem vs Rep majority).
+quintile_by_direction <- lfpr_panel %>%
+  filter(!is.na(vote_margin), !is.na(lfpr_female), is.finite(income_quintile_national)) %>%
+  mutate(
+    political_direction = if_else(vote_margin > 0, "Democratic-majority", "Republican-majority")
+  ) %>%
+  group_by(political_direction, income_quintile_national) %>%
+  summarise(
+    lfpr_female_mean = mean(lfpr_female, na.rm = TRUE),
+    lfpr_gap_mean    = mean(lfpr_gap,    na.rm = TRUE),
+    n_county_years   = n(),
+    .groups = "drop"
+  )
+
+p_quintile_direction <- ggplot(
+  quintile_by_direction,
+  aes(x = income_quintile_national, y = lfpr_female_mean,
+      color = political_direction, group = political_direction)
+) +
+  geom_line(linewidth = 1.1) +
+  geom_point(size = 2.8) +
+  scale_x_continuous(breaks = 1:5,
+                     labels = c("Q1\n(poorest)", "Q2", "Q3", "Q4", "Q5\n(richest)")) +
+  scale_color_manual(values = c("Democratic-majority" = "#4575b4",
+                                "Republican-majority"  = "#d73027")) +
+  labs(
+    title    = "Female LFPR by national income quintile: Dem vs Rep counties",
+    subtitle = "County-year means, ACS 5-year 2010-2020 (vote_margin > 0 = Dem)",
+    x        = "County national income quintile",
+    y        = "Mean female LFPR (%, ages 20-64)",
+    color    = NULL
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+save_plot("departure_female_lfpr_by_quintile_dem_vs_rep.png",
+          { print(p_quintile_direction) }, width = 1800, height = 1200)
+
+# Same plot for LFPR gap
+p_gap_direction <- ggplot(
+  quintile_by_direction,
+  aes(x = income_quintile_national, y = lfpr_gap_mean,
+      color = political_direction, group = political_direction)
+) +
+  geom_line(linewidth = 1.1) +
+  geom_point(size = 2.8) +
+  scale_x_continuous(breaks = 1:5,
+                     labels = c("Q1\n(poorest)", "Q2", "Q3", "Q4", "Q5\n(richest)")) +
+  scale_color_manual(values = c("Democratic-majority" = "#4575b4",
+                                "Republican-majority"  = "#d73027")) +
+  labs(
+    title    = "Male-female LFPR gap by national income quintile: Dem vs Rep counties",
+    subtitle = "County-year means, ACS 5-year 2010-2020",
+    x        = "County national income quintile",
+    y        = "Mean LFPR gap (male − female, pp)",
+    color    = NULL
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+save_plot("departure_lfpr_gap_by_quintile_dem_vs_rep.png",
+          { print(p_gap_direction) }, width = 1800, height = 1200)
+
+# 6c) Time trend: Q5 counties only, female LFPR by political direction
+q5_time_trend <- lfpr_panel %>%
+  filter(income_quintile_national == 5, !is.na(vote_margin), !is.na(lfpr_female)) %>%
+  mutate(
+    political_direction = if_else(vote_margin > 0, "Democratic-majority", "Republican-majority")
+  ) %>%
+  group_by(political_direction, year) %>%
+  summarise(
+    lfpr_female_mean = mean(lfpr_female, na.rm = TRUE),
+    lfpr_gap_mean    = mean(lfpr_gap, na.rm = TRUE),
+    n_counties       = n(),
+    .groups = "drop"
+  )
+
+p_q5_trend <- ggplot(
+  q5_time_trend,
+  aes(x = year, y = lfpr_female_mean, color = political_direction, group = political_direction)
+) +
+  geom_line(linewidth = 1.1) +
+  geom_point(size = 2.5) +
+  scale_color_manual(values = c("Democratic-majority" = "#4575b4",
+                                "Republican-majority"  = "#d73027")) +
+  labs(
+    title    = "Female LFPR trend in top-quintile counties: Dem vs Rep",
+    subtitle = "Only nationally Q5 counties, 2010-2020; divergence tests the 'norms re-emerge at high income' hypothesis",
+    x        = "Year",
+    y        = "Mean female LFPR (%, ages 20-64)",
+    color    = NULL
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+save_plot("departure_q5_female_lfpr_trend_dem_vs_rep.png",
+          { print(p_q5_trend) }, width = 1800, height = 1100)
+
+# 6d) trad vs dem_solid_rich: same time trend (stricter group definitions)
+trad_demrich_trend <- lfpr_panel %>%
+  filter(trad == 1 | dem_solid_rich == 1, !is.na(lfpr_female)) %>%
+  mutate(group = if_else(trad == 1, "trad (state Q5, Rep)", "dem_solid_rich (state Q5, Dem)")) %>%
+  group_by(group, year) %>%
+  summarise(
+    lfpr_female_mean = mean(lfpr_female, na.rm = TRUE),
+    lfpr_gap_mean    = mean(lfpr_gap, na.rm = TRUE),
+    n_counties       = n(),
+    .groups = "drop"
+  )
+
+p_trad_trend <- ggplot(
+  trad_demrich_trend,
+  aes(x = year, y = lfpr_female_mean, color = group, group = group)
+) +
+  geom_line(linewidth = 1.1) +
+  geom_point(size = 2.5) +
+  scale_color_manual(values = c("trad (state Q5, Rep)"           = "#d73027",
+                                "dem_solid_rich (state Q5, Dem)" = "#4575b4")) +
+  labs(
+    title    = "Female LFPR trend: trad vs dem_solid_rich counties",
+    subtitle = "Both groups are high-income within state; difference reflects social norm effect",
+    x        = "Year",
+    y        = "Mean female LFPR (%, ages 20-64)",
+    color    = NULL
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+save_plot("departure_trad_vs_demrich_female_lfpr_trend.png",
+          { print(p_trad_trend) }, width = 1800, height = 1100)
+
+# --- Group mutual-exclusivity check ---
+overlap_check <- lfpr_panel %>%
+  mutate(group_sum = trad + asp_trad + dem_solid_poor + dem_solid_rich) %>%
+  summarise(
+    max_overlap    = max(group_sum, na.rm = TRUE),
+    n_double_count = sum(group_sum > 1, na.rm = TRUE),
+    pct_in_any     = round(mean(group_sum >= 1, na.rm = TRUE) * 100, 1)
+  )
+message("Group validation — max simultaneous group flags: ", overlap_check$max_overlap,
+        " | double-counted rows: ", overlap_check$n_double_count,
+        " | % county-years in any group: ", overlap_check$pct_in_any, "%")

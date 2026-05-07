@@ -887,4 +887,171 @@ message("Wrote: ", heatmap_file)
 message("Wrote: ", county_pair_file)
 message("Wrote: ", county_lfpr_ratio_file)
 message("Wrote: ", composition_file)
+
+# =========================================================
+# 12) PRIORITY DESCRIPTIVES: household-level hours × political group
+# =========================================================
+# Requires ipums_married_oppositesex_spouse_pairs_with_groups.csv
+# produced by Section 7 of ipums-county-household-analysis.R.
+# If the file is absent, this section is skipped with a warning.
+
+merged_pair_file <- file.path(panel_dir, "ipums_married_oppositesex_spouse_pairs_with_groups.csv")
+
+if (!file.exists(merged_pair_file)) {
+  message("Skipping Section 12: merged political file not found. Run Section 7 of ",
+          "ipums-county-household-analysis.R first.")
+} else {
+  message("Running Section 12: household-level political × income descriptives...")
+
+  mpairs <- fread(merged_pair_file)
+
+  # CPI adjustment: rebase to real_base_year (inherited from Section 2)
+  mpairs <- merge(mpairs, cpi_lookup[, .(year, cpi_year)],
+                  by.x = "YEAR", by.y = "year", all.x = TRUE)
+  mpairs[, cpi_factor := base_cpi / cpi_year]
+
+  # Real income for quintile binning (within-year national bins from existing income_quintile column)
+  # Use the income_quintile already computed in section 4 of ipums-county-household-analysis.R.
+  # Political direction: binary Dem vs Rep by vote_margin sign
+  mpairs[, political_direction := fcase(
+    vote_margin >  0, "Democratic-majority",
+    vote_margin <= 0, "Republican-majority",
+    default = NA_character_
+  )]
+
+  # --- 12a) Female work share by income quintile × political direction ---
+  pols_q <- mpairs[
+    !is.na(income_quintile) & !is.na(political_direction),
+    .(
+      female_work_share  = weighted_mean_safe(as.numeric(female_empstat == 1), HHWT),
+      male_work_share    = weighted_mean_safe(as.numeric(male_empstat == 1), HHWT),
+      female_hours_mean  = weighted_mean_safe(female_weekly_hours, HHWT),
+      male_hours_mean    = weighted_mean_safe(male_weekly_hours, HHWT),
+      hours_gap_mean     = weighted_mean_safe(male_weekly_hours - female_weekly_hours, HHWT),
+      male_only_share    = weighted_mean_safe(as.numeric(male_only_earner), HHWT),
+      dual_earner_share  = weighted_mean_safe(as.numeric(dual_earner), HHWT),
+      has_children_share = weighted_mean_safe(as.numeric(has_children), HHWT),
+      n_hh               = .N
+    ),
+    by = .(political_direction, income_quintile)
+  ][order(political_direction, income_quintile)]
+
+  # Validation: work shares in [0,1]
+  share_violations <- pols_q[female_work_share < 0 | female_work_share > 1 |
+                               male_work_share < 0  | male_work_share > 1, .N]
+  message("Section 12 work-share validation: ", share_violations, " out-of-range cells (should be 0)")
+
+  message("Household n by cell (flag if < 200):")
+  print(pols_q[n_hh < 200, .(political_direction, income_quintile, n_hh)])
+
+  p12a <- ggplot(pols_q[!is.na(political_direction)],
+                 aes(x = income_quintile, y = female_work_share * 100,
+                     color = political_direction, group = political_direction)) +
+    geom_line(linewidth = 1.1) +
+    geom_point(size = 2.5) +
+    scale_x_continuous(breaks = 1:5,
+                       labels = c("Q1\n(poorest)", "Q2", "Q3", "Q4", "Q5\n(richest)")) +
+    scale_color_manual(values = c("Democratic-majority" = "#4575b4",
+                                  "Republican-majority"  = "#d73027")) +
+    labs(
+      title    = "Female work share by income quintile: Dem vs Rep counties",
+      subtitle = "Married opposite-sex HH, both spouses ages 25-64; IPUMS micro-data",
+      x        = "Household income quintile (within year)",
+      y        = "Female work share (empstat=employed, %)",
+      color    = NULL
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(legend.position = "bottom")
+  save_plot("ipums_hh_female_work_share_by_quintile_dem_vs_rep.png",
+            { print(p12a) }, width = 1800, height = 1200)
+
+  # --- 12b) Hours gap (male − female) by income quintile × political direction ---
+  p12b <- ggplot(pols_q[!is.na(political_direction)],
+                 aes(x = income_quintile, y = hours_gap_mean,
+                     color = political_direction, group = political_direction)) +
+    geom_line(linewidth = 1.1) +
+    geom_point(size = 2.5) +
+    scale_x_continuous(breaks = 1:5,
+                       labels = c("Q1\n(poorest)", "Q2", "Q3", "Q4", "Q5\n(richest)")) +
+    scale_color_manual(values = c("Democratic-majority" = "#4575b4",
+                                  "Republican-majority"  = "#d73027")) +
+    labs(
+      title    = "Weekly hours gap (male − female) by income quintile: Dem vs Rep counties",
+      subtitle = "Married opposite-sex HH; hours gap = 0 means equal hours",
+      x        = "Household income quintile (within year)",
+      y        = "Mean weekly hours gap (male − female)",
+      color    = NULL
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(legend.position = "bottom")
+  save_plot("ipums_hh_hours_gap_by_quintile_dem_vs_rep.png",
+            { print(p12b) }, width = 1800, height = 1200)
+
+  # --- 12c) Male-only earner share at Q5 over time ---
+  pols_q5_time <- mpairs[
+    income_quintile == 5 & !is.na(political_direction),
+    .(
+      female_work_share = weighted_mean_safe(as.numeric(female_empstat == 1), HHWT),
+      hours_gap_mean    = weighted_mean_safe(male_weekly_hours - female_weekly_hours, HHWT),
+      male_only_share   = weighted_mean_safe(as.numeric(male_only_earner), HHWT),
+      n_hh              = .N
+    ),
+    by = .(YEAR, political_direction)
+  ][order(YEAR, political_direction)]
+
+  p12c <- ggplot(pols_q5_time,
+                 aes(x = YEAR, y = female_work_share * 100,
+                     color = political_direction, group = political_direction)) +
+    geom_line(linewidth = 1.1) +
+    geom_point(size = 2.5) +
+    scale_color_manual(values = c("Democratic-majority" = "#4575b4",
+                                  "Republican-majority"  = "#d73027")) +
+    labs(
+      title    = "Female work share in top quintile (Q5) households: Dem vs Rep counties, over time",
+      subtitle = "Tests whether norm-driven divergence grows over 1980-2023",
+      x        = "Year",
+      y        = "Female work share (empstat=employed, %)",
+      color    = NULL
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(legend.position = "bottom")
+  save_plot("ipums_hh_q5_female_work_share_trend_dem_vs_rep.png",
+            { print(p12c) }, width = 1800, height = 1100)
+
+  # --- 12d) Same plots, children vs no-children split ---
+  pols_q_kids <- mpairs[
+    !is.na(income_quintile) & !is.na(political_direction) & !is.na(has_children),
+    .(
+      female_work_share = weighted_mean_safe(as.numeric(female_empstat == 1), HHWT),
+      hours_gap_mean    = weighted_mean_safe(male_weekly_hours - female_weekly_hours, HHWT),
+      n_hh              = .N
+    ),
+    by = .(political_direction, income_quintile, has_children)
+  ][order(political_direction, income_quintile, has_children)]
+  pols_q_kids[, children_label := if_else(has_children == 1, "With children", "No children")]
+
+  p12d <- ggplot(pols_q_kids[!is.na(political_direction)],
+                 aes(x = income_quintile, y = female_work_share * 100,
+                     color = political_direction, linetype = children_label,
+                     group = interaction(political_direction, children_label))) +
+    geom_line(linewidth = 0.9) +
+    geom_point(size = 2.0) +
+    scale_x_continuous(breaks = 1:5,
+                       labels = c("Q1\n(poorest)", "Q2", "Q3", "Q4", "Q5\n(richest)")) +
+    scale_color_manual(values = c("Democratic-majority" = "#4575b4",
+                                  "Republican-majority"  = "#d73027")) +
+    labs(
+      title    = "Female work share by income quintile: Dem vs Rep, with and without children",
+      subtitle = "Separates fertility-driven LFPR drop from norm-driven effect",
+      x        = "Household income quintile (within year)",
+      y        = "Female work share (empstat=employed, %)",
+      color    = NULL, linetype = NULL
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(legend.position = "bottom")
+  save_plot("ipums_hh_female_work_share_by_quintile_dem_vs_rep_kids.png",
+            { print(p12d) }, width = 2000, height = 1200)
+
+  message("Section 12 complete.")
+}
 message("Wrote: ", validation_file)

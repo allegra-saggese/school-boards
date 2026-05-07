@@ -214,7 +214,7 @@ for (yr in years_keep) {
   pair_sql <- paste0(
     "WITH base AS (",
     "  SELECT YEAR, SAMPLE, SERIAL, PERNUM, STATEICP, COUNTYICP, AGE, SEX, SPLOC, HHWT, HHINCOME,",
-    "         EMPSTAT, UHRSWORK, WKSWORK1, INCWAGE, INCTOT, INCSS, INCWELFR ",
+    "         EMPSTAT, UHRSWORK, WKSWORK1, INCWAGE, INCTOT, INCSS, INCWELFR, NCHILD ",
     "  FROM ipums_table ",
     "  WHERE YEAR = ", yr, " ",
     "    AND STATEICP IS NOT NULL ",
@@ -265,7 +265,8 @@ for (yr in years_keep) {
     "    MAX(CASE WHEN SEX = 2 THEN INCSS END) AS female_incss,",
     "    MAX(CASE WHEN SEX = 1 THEN INCSS END) AS male_incss,",
     "    MAX(CASE WHEN SEX = 2 THEN INCWELFR END) AS female_incwelfr,",
-    "    MAX(CASE WHEN SEX = 1 THEN INCWELFR END) AS male_incwelfr ",
+    "    MAX(CASE WHEN SEX = 1 THEN INCWELFR END) AS male_incwelfr,",
+    "    MAX(NCHILD) AS nchild ",
     "  FROM adults ",
     "  GROUP BY YEAR, SAMPLE, SERIAL ",
     "  HAVING SUM(CASE WHEN SEX = 2 THEN 1 ELSE 0 END) = 1 ",
@@ -283,7 +284,7 @@ for (yr in years_keep) {
     "  female_pernum, male_pernum, female_empstat, male_empstat,",
     "  female_uhrswork_raw, male_uhrswork_raw, female_wkswork1_raw, male_wkswork1_raw,",
     "  female_incwage, male_incwage, female_inctot, male_inctot,",
-    "  female_incss, male_incss, female_incwelfr, male_incwelfr, hh_transfer_income ",
+    "  female_incss, male_incss, female_incwelfr, male_incwelfr, hh_transfer_income, nchild ",
     "FROM pairs"
   )
 
@@ -314,7 +315,9 @@ for (yr in years_keep) {
       male_share_hh_income_no_transfers = ifelse(household_income_no_transfers > 0, male_income_no_transfers / household_income_no_transfers, NA_real_),
       male_only_earner = as.integer(coalesce(female_income_wage_nonneg <= 0 & male_income_wage_nonneg > 0, FALSE)),
       female_only_earner = as.integer(coalesce(male_income_wage_nonneg <= 0 & female_income_wage_nonneg > 0, FALSE)),
-      dual_earner = as.integer(coalesce(male_income_wage_nonneg > 0 & female_income_wage_nonneg > 0, FALSE))
+      dual_earner = as.integer(coalesce(male_income_wage_nonneg > 0 & female_income_wage_nonneg > 0, FALSE)),
+      nchild = as.integer(nchild),
+      has_children = as.integer(coalesce(nchild > 0, FALSE))
     )
 
   message("Year ", yr, ": extracted ", nrow(pairs_year), " spouse pairs")
@@ -373,6 +376,8 @@ for (yr in years_keep) {
       male_only_earner_share = weighted_mean_safe(male_only_earner, HHWT),
       female_only_earner_share = weighted_mean_safe(female_only_earner, HHWT),
       dual_earner_share = weighted_mean_safe(dual_earner, HHWT),
+      has_children_share = weighted_mean_safe(has_children, HHWT),
+      nchild_mean = weighted_mean_safe(nchild, HHWT),
       .groups = "drop"
     ) %>%
     rename(year = YEAR)
@@ -683,11 +688,196 @@ if (nrow(scatter_sample_out) > 0) {
   save_plot("ipums_scatter_household_income_vs_male_income_no_transfers.png", { print(p_scatter) }, width = 1800, height = 1200)
 }
 
+# =========================================================
+# 6) Household composition descriptives
+# =========================================================
+# Population summary: how large is the universe of households relative
+# to the spouse-pair sample we study?
+# Counts: all HH, 1-person HH, 2-person HH, spousal HH by work status.
+# Spousal HH = HH with at least one opposite-sex married couple
+# (detected via SPLOC link for both sexes).
+
+comp_sql <- paste0(
+  "WITH hh_base AS (",
+  "  SELECT YEAR, SAMPLE, SERIAL,",
+  "         MAX(NUMPREC) AS numprec,",
+  "         MAX(HHWT) AS hhwt,",
+  "         SUM(CASE WHEN SPLOC > 0 AND SEX = 2 AND AGE BETWEEN 18 AND 70 THEN 1 ELSE 0 END) AS n_wife_linked,",
+  "         SUM(CASE WHEN SPLOC > 0 AND SEX = 1 AND AGE BETWEEN 18 AND 70 THEN 1 ELSE 0 END) AS n_husb_linked,",
+  "         MAX(CASE WHEN SPLOC > 0 AND SEX = 2 AND AGE BETWEEN 18 AND 70 THEN EMPSTAT END) AS wife_empstat,",
+  "         MAX(CASE WHEN SPLOC > 0 AND SEX = 1 AND AGE BETWEEN 18 AND 70 THEN EMPSTAT END) AS husb_empstat ",
+  "  FROM ipums_table ",
+  "  WHERE YEAR IN (", paste(years_keep, collapse = ","), ") AND GQ IN (1, 2) ",
+  "  GROUP BY YEAR, SAMPLE, SERIAL",
+  ") ",
+  "SELECT ",
+  "  YEAR,",
+  "  SUM(hhwt) AS n_hh_total,",
+  "  SUM(CASE WHEN numprec = 1 THEN hhwt ELSE 0 END) AS n_hh_single_person,",
+  "  SUM(CASE WHEN numprec = 2 THEN hhwt ELSE 0 END) AS n_hh_two_person,",
+  "  SUM(CASE WHEN n_wife_linked >= 1 AND n_husb_linked >= 1 THEN hhwt ELSE 0 END) AS n_hh_spousal,",
+  "  SUM(CASE WHEN n_wife_linked >= 1 AND n_husb_linked >= 1",
+  "           AND wife_empstat = 1 AND husb_empstat = 1 THEN hhwt ELSE 0 END) AS n_spousal_both_working,",
+  "  SUM(CASE WHEN n_wife_linked >= 1 AND n_husb_linked >= 1",
+  "           AND wife_empstat = 1 AND (husb_empstat IS NULL OR husb_empstat != 1) THEN hhwt ELSE 0 END) AS n_spousal_female_only,",
+  "  SUM(CASE WHEN n_wife_linked >= 1 AND n_husb_linked >= 1",
+  "           AND husb_empstat = 1 AND (wife_empstat IS NULL OR wife_empstat != 1) THEN hhwt ELSE 0 END) AS n_spousal_male_only,",
+  "  SUM(CASE WHEN n_wife_linked >= 1 AND n_husb_linked >= 1",
+  "           AND (wife_empstat IS NULL OR wife_empstat != 1)",
+  "           AND (husb_empstat IS NULL OR husb_empstat != 1) THEN hhwt ELSE 0 END) AS n_spousal_neither ",
+  "FROM hh_base ",
+  "GROUP BY YEAR ",
+  "ORDER BY YEAR"
+)
+
+comp_df <- dbGetQuery(con, comp_sql) %>%
+  mutate(
+    pct_single_person  = 100 * n_hh_single_person / n_hh_total,
+    pct_two_person     = 100 * n_hh_two_person    / n_hh_total,
+    pct_spousal        = 100 * n_hh_spousal        / n_hh_total,
+    # Within spousal HH: shares of each work status (must sum to ~1)
+    pct_both_working   = 100 * n_spousal_both_working  / n_hh_spousal,
+    pct_female_only    = 100 * n_spousal_female_only   / n_hh_spousal,
+    pct_male_only      = 100 * n_spousal_male_only     / n_hh_spousal,
+    pct_neither        = 100 * n_spousal_neither        / n_hh_spousal,
+    pct_work_status_sum = pct_both_working + pct_female_only + pct_male_only + pct_neither
+  )
+
+# Validation: within-spousal work status shares should sum to ~100%
+max_share_err <- max(abs(comp_df$pct_work_status_sum - 100), na.rm = TRUE)
+message("HH composition — work status share sum max error: ", round(max_share_err, 2), "pp (should be ~0)")
+
+comp_file <- file.path(results_dir, "ipums_hh_composition_summary.csv")
+write_csv(comp_df, comp_file)
+message("Household composition summary written: ", comp_file)
+
+# Plot: spousal HH work status shares over time (stacked area)
+comp_long <- comp_df %>%
+  select(YEAR, pct_both_working, pct_female_only, pct_male_only, pct_neither) %>%
+  pivot_longer(
+    cols = c(pct_both_working, pct_female_only, pct_male_only, pct_neither),
+    names_to = "status",
+    values_to = "pct"
+  ) %>%
+  mutate(
+    status = recode(status,
+      pct_both_working = "Both working",
+      pct_female_only  = "Female-only earner",
+      pct_male_only    = "Male-only earner",
+      pct_neither      = "Neither working"
+    ),
+    status = factor(status, levels = c("Both working", "Female-only earner",
+                                       "Male-only earner", "Neither working"))
+  )
+
+p_comp <- ggplot(comp_long, aes(x = YEAR, y = pct, fill = status)) +
+  geom_area() +
+  labs(
+    title    = "Work status composition of spousal households over time",
+    subtitle = "All opposite-sex spousal households (broad), ages 18-70; IPUMS micro-data",
+    x = "Year", y = "Share of spousal HH (%)", fill = "Work status"
+  ) +
+  theme_minimal(base_size = 11)
+save_plot("ipums_hh_composition_spousal_work_status_over_time.png",
+          { print(p_comp) }, width = 1800, height = 1100)
+
+# =========================================================
+# 7) Merge spouse-pair data to county political groups
+# =========================================================
+# Builds: ipums_married_oppositesex_spouse_pairs_with_groups.csv
+# Join key: STATEICP + COUNTYICP → FIPS state + county code → panel FIPS string.
+#
+# STATEICP → FIPS state: standard IPUMS ICP code crosswalk (hardcoded below,
+# validated for CA(71), TX(49), WI(25), MD(52), VA(40), WV(56), AK(81), DC(98)).
+# COUNTYICP → FIPS county: COUNTYICP / 10 maps to 3-digit FIPS county code
+# for post-1980 samples; minor historical exceptions may produce NA matches.
+
+stateicp_fips_xwalk <- data.frame(
+  STATEICP  = c(
+     1,  2,  3,  4,  5,  6,          # CT  ME  MA  NH  RI  VT
+    11, 12, 13, 14,                   # DE  NJ  NY  PA
+    21, 22, 23, 24, 25,               # IL  IN  MI  OH  WI
+    31, 32, 33, 34, 35, 36, 37,       # IA  KS  MN  MO  NE  ND  SD
+    40, 41, 42, 43, 44, 45, 46, 47, 48, 49,  # VA  AL  AR  FL  GA  LA  MS  NC  SC  TX
+    51, 52, 53, 54, 56,               # KY  MD  OK  TN  WV
+    61, 62, 63, 64, 65, 66, 67, 68,  # AZ  CO  ID  MT  NV  NM  UT  WY
+    71, 72, 73,                       # CA  OR  WA
+    81, 82,                           # AK  HI
+    98                                # DC
+  ),
+  state_fips = c(
+     9, 23, 25, 33, 44, 50,
+    10, 34, 36, 42,
+    17, 18, 26, 39, 55,
+    19, 20, 27, 29, 31, 38, 46,
+    51,  1,  5, 12, 13, 22, 28, 37, 45, 48,
+    21, 24, 40, 47, 54,
+     4,  8, 16, 30, 32, 35, 49, 56,
+     6, 41, 53,
+     2, 15,
+    11
+  ),
+  stringsAsFactors = FALSE
+)
+
+# Build FIPS string from STATEICP and COUNTYICP
+pairs_raw <- read_csv(pair_file, show_col_types = FALSE)
+
+pairs_with_fips <- pairs_raw %>%
+  left_join(stateicp_fips_xwalk, by = "STATEICP") %>%
+  mutate(
+    county_fips_int = as.integer(floor(COUNTYICP / 10)),
+    fips = ifelse(
+      !is.na(state_fips) & !is.na(county_fips_int) & county_fips_int > 0,
+      sprintf("%02d%03d", state_fips, county_fips_int),
+      NA_character_
+    )
+  )
+
+match_rate <- mean(!is.na(pairs_with_fips$fips)) * 100
+message("Spouse-pair FIPS match rate: ", round(match_rate, 1), "% of household-year observations")
+
+# Load the political-income group panel (latest dated file)
+groups_files <- list.files(
+  data_path("processed", "panel"),
+  pattern = "_lfpr_panel_with_groups\\.csv$",
+  full.names = TRUE
+)
+if (length(groups_files) == 0) stop("No lfpr_panel_with_groups file found; run lfpr-groupings.R first.")
+groups_panel <- read_csv(sort(groups_files)[length(groups_files)], show_col_types = FALSE) %>%
+  select(fips, year, vote_margin, vote_spread, dem_percent, rep_percent,
+         income_quintile_national, income_quintile_state,
+         trad, asp_trad, dem_solid_poor, dem_solid_rich) %>%
+  rename(YEAR = year)
+
+# Merge: left join on (fips, YEAR) — LOCF already applied in groups_panel
+pairs_merged <- pairs_with_fips %>%
+  left_join(groups_panel, by = c("fips", "YEAR"))
+
+group_match_rate <- mean(!is.na(pairs_merged$vote_margin)) * 100
+message("Political group merge rate: ", round(group_match_rate, 1),
+        "% of households matched to vote data")
+
+# Validation: group flags should be mutually exclusive
+overlap_n <- sum(
+  (coalesce(pairs_merged$trad, 0) + coalesce(pairs_merged$asp_trad, 0) +
+   coalesce(pairs_merged$dem_solid_poor, 0) + coalesce(pairs_merged$dem_solid_rich, 0)) > 1,
+  na.rm = TRUE
+)
+message("Political group overlap check: ", overlap_n,
+        " households flagged in more than one group (should be 0)")
+
+merged_file <- file.path(panel_dir, "ipums_married_oppositesex_spouse_pairs_with_groups.csv")
+write_csv(pairs_merged, merged_file)
+message("Merged spouse-pair file written: ", merged_file)
+
 message("IPUMS county-household pipeline complete.")
 message("County metrics file: ", county_file)
 message("Spouse pair file: ", pair_file)
 message("Conditional file: ", conditional_file)
 message("Scatter sample file: ", scatter_sample_file)
+message("HH composition file: ", comp_file)
+message("Merged political spouse-pair file: ", merged_file)
 
 run_extended_suite <- tolower(Sys.getenv("RUN_IPUMS_MARRIED_SUITE", "true")) == "true"
 if (run_extended_suite) {

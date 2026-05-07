@@ -1,22 +1,44 @@
 ### School boards, culture, and women who work
-#### WIP, last updated: FEB 2026
+#### WIP, last updated: MAY 2026
 ***
 
 ##### Project overview
-Economic analysis of culture and its impact on female labor force 
-participation rates in the US for high potential earners. This data is a first attempt
-at generating stylized facts for individuals across incomes and understanding female 
-labor force participation over time in the country. 
+Economic analysis of culture and its impact on female labor force participation (LFPR)
+in the US, with a focus on intra-household bargaining under social norms.
+The project generates stylized facts about female LFPR across income levels, political
+culture, and time — targeting findings that depart from the standard "economics dominate
+at high income" story (Goldin U-curve). The end goal is a household bargaining model
+where a norm penalty on wife's work is income-elastic: richer conservative households
+can afford to enforce it, producing a cultural scissors in LFPR trends.
 
-#### File structure 
-*Note: all files and coding is in progress - early stages*
-- IPUMS data cleaning file: containing US survey and census data, at following levels:
-    - household level
-    - female parent in household level
-    - school district level
-    - county level
-- Functions file: for storage of loops and other common functions to be repeated in cleaning process, load into preamble of all files
-- Prelim analysis file: using US census and BEA data to fit intra-country (county-level) U-curves for labor force participation (female) in the US
+**Research question**: Do high-income women in conservative areas work less than
+comparably-rich women in liberal areas, even holding household income constant?
+And does the husband–wife hours gap widen with income in conservative (but not liberal)
+counties — evidence of bargaining, not just constraint?
+
+#### File structure
+
+**Analysis tracks (two parallel pipelines):**
+
+**Track A — ACS county panel (2010–2020):**
+- `lfpr-panel-analysis.R` → county LFPR + income panel from ACS 5-year, CPI-adjusted
+- `lfpr-groupings.R` → political-income group indicators (trad/asp_trad/dem_solid_poor/dem_solid_rich); *Section 6* adds departure descriptives: female LFPR × income quintile × political direction
+
+**Track B — IPUMS household microdata (1980–2023):**
+- `ipums-data-cleaning.R` → builds SQLite database from IPUMS extract
+- `ipums-county-household-analysis.R` → county LFPR/hours panel + opposite-sex married spouse-pair micro file; *Section 6* adds HH composition descriptives (1-person, 2-person, spousal breakdown); *Section 7* adds STATEICP/COUNTYICP → FIPS crosswalk and merges spouse-pair data to political groups
+- `ipums-married-household-suite.R` → multi-measure income analysis on spouse pairs; *Section 12* adds household-level hours × political group descriptives (requires Section 7 output)
+- `ipums-county-female-lfpr-scatter.R`, `ipums-wage-quintile-time-graphs.R`, `ipums-spouse-income-scatter-plots.R` → additional IPUMS graphs
+
+**Regressions:**
+- `ipums-ols-regressions.R` → descriptive OLS: county-level (LFPR ~ income × vote_margin + FEs) and household-level (wife hours ~ income quintile × conservative + year FE + children)
+
+**Identification (in progress):**
+- `ballotopedia-data.R` → school board election event study for causal identification
+
+**Infrastructure:**
+- `functions.R`, `load-reqs.R`, `R/paths.R` → utilities; load into preamble of all files
+- `config.yml` → path configuration (external data in Dropbox)
 
 #### Data layout
 - `data/raw`: raw inputs (kept out of git)
@@ -32,25 +54,24 @@ labor force participation over time in the country.
   - `SCHOOL_BOARDS_EXTERNAL_ROOT`
 
 #### Workflow
-1. Configure paths:
-   - Set `external_data_root` in `config.yml` to your Dropbox project root.
-   - Place external files under `<external_data_root>/data/`.
-2. Prepare IPUMS data:
-   - Run `ipmus-data-cleaning.R` to unzip GRF files and build the SQLite database.
-   - Output goes to `data/interim/ipums_data.sqlite`.
-3. Build county panel inputs:
-   - Run `fred-county-panel.R` (requires `FRED_API_KEY`) to download county series.
-   - Output goes to `data/processed/fred/`.
-4. Run preliminary analysis:
-   - Run `10-2025-prelim-analysis.R` to load Census/BEA data from Dropbox, clean, merge, and run regressions.
-   - Plots are automatically saved to `data/graphs/`.
-5. Run panel pipeline:
-   - Run `lfpr-panel-analysis.R` to pull ACS county LFPR + household income panel, merge presidential vote data with LOCF, run yearly linear/quadratic models, and generate plots.
-   - Outputs are date-prefixed as `YYYY-MM-DD_*`.
-   - Current default panel window is endpoint years `2010:2020`.
-6. Run grouping analysis:
-   - Run `lfpr-groupings.R` to build county-year political-income group indicators, compute summary statistics (overall and by year), and generate group-focused visuals.
-   - Outputs are date-prefixed as `YYYY-MM-DD_*`.
+
+**Track A — ACS county panel:**
+1. Configure paths: set `external_data_root` in `config.yml` to your Dropbox project root.
+2. Run `fred-county-panel.R` (requires `FRED_API_KEY`) → `data/processed/fred/`.
+3. Run `10-2025-prelim-analysis.R` → Census/BEA regressions and plots.
+4. Run `lfpr-panel-analysis.R` → ACS county panel; outputs date-prefixed `YYYY-MM-DD_lfpr_panel.csv`.
+5. Run `lfpr-groupings.R` → political group indicators and departure descriptives (Section 6); outputs `YYYY-MM-DD_lfpr_panel_with_groups.csv`.
+
+**Track B — IPUMS household microdata:**
+6. Run `ipmus-data-cleaning.R` → `data/interim/ipums_data.sqlite`.
+7. Run `ipums-county-household-analysis.R` → county LFPR panel, spouse-pair micro file, HH composition summary (Section 6), and political merge (Section 7).
+   - Section 7 requires `lfpr_panel_with_groups.csv` from step 5.
+   - Output: `ipums_married_oppositesex_spouse_pairs_with_groups.csv`
+8. `ipums-married-household-suite.R` is sourced automatically at the end of step 7 (or run independently).
+   - Section 12 generates household-level political × income descriptives.
+
+**Regressions:**
+9. Run `ipums-ols-regressions.R` → requires outputs from steps 5 and 7.
 
 #### LFPR panel notes
 - Script: `lfpr-panel-analysis.R`
