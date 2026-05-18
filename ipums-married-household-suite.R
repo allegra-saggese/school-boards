@@ -1055,11 +1055,12 @@ if (!file.exists(merged_pair_file)) {
   # --- 12e) Female work share by income quintile × political direction × frontier ---
   frontier_lu <- fread(
     file.path(panel_dir, "bazzi_frontier_indicators.csv"),
-    select     = c("fips", "is_frontier"),
-    colClasses = c(fips = "character", is_frontier = "integer")
+    select = c("fips", "is_frontier")
   )
+  frontier_lu[, fips := as.character(as.integer(fips))]
 
   if ("fips" %in% names(mpairs)) {
+    mpairs[, fips := as.character(fips)]
     mpairs_f <- merge(
       mpairs,
       frontier_lu,
