@@ -1,0 +1,7 @@
+\beamer@sectionintoc {1}{Motivation}{3}{0}{1}
+\beamer@sectionintoc {2}{What we know}{7}{0}{2}
+\beamer@sectionintoc {3}{A new narrative}{11}{0}{3}
+\beamer@sectionintoc {4}{The income-elastic norm: stylized facts}{14}{0}{4}
+\beamer@sectionintoc {5}{Evidence for the mechanism}{20}{0}{5}
+\beamer@sectionintoc {6}{Model}{25}{0}{6}
+\beamer@sectionintoc {7}{Next steps}{29}{0}{7}

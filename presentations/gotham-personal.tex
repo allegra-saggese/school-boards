@@ -1,0 +1,158 @@
+% Customization layer for Gotham.
+% Keep your edits here so theme updates are easier later.
+
+% ----------------------------
+% Brand color palette
+% ----------------------------
+\definecolor{BrandPrimary}{HTML}{33362B}
+\definecolor{BrandPrimaryLight}{HTML}{FFF3D6}
+\definecolor{BrandCanvas}{HTML}{FFFFFF}
+\definecolor{BrandAccent}{HTML}{DCC0E2}
+\definecolor{BrandSuccess}{HTML}{004BA8}
+\definecolor{BrandAlert}{HTML}{C43131}
+\definecolor{BrandText}{HTML}{010C13}
+
+% Map Gotham semantic color slots to your brand.
+\colorlet{colorPale}{BrandCanvas}       % default slide background
+\colorlet{colorDark}{BrandText}         % default text color
+\colorlet{colorA}{BrandPrimary}         % frame title, standout
+\colorlet{colorAreversed}{BrandPrimaryLight}
+\colorlet{colorB}{BrandPrimaryLight}    % neutral elements
+\colorlet{colorC}{BrandAccent}          % progress bar
+\colorlet{colorD}{BrandAlert}           % alert
+\colorlet{colorE}{BrandSuccess}         % example
+\colorlet{colorFG}{colorDark}
+\colorlet{colorBG}{colorPale}
+
+% Keep these elements aligned with your color mapping after bg mode changes.
+\renewcommand{\gothamHookPostColorBGSet}{%
+  \colorlet{colorStandout}{colorA}%
+  \colorlet{colorFrametitle}{colorA}%
+  \colorlet{colorTitlepage}{colorA}%
+  \colorlet{colorProgBar}{colorC}%
+  \colorlet{colorBackElement}{colorB}%
+  \colorlet{colorAlert}{colorD}%
+  \colorlet{colorExample}{colorE}%
+  \setbeamercolor{frametitle}{%
+    use=primary palette,
+    parent=primary palette,
+    bg=colorFrametitle,
+    fg=colorBG
+  }%
+  % Progress bar "empty track" color.
+  \setbeamercolor{progress bar}{fg=colorProgBar, bg=colorB!65!colorBG}%
+  \setbeamercolor{alerted text}{fg=colorAlert}%
+  \setbeamercolor{example text}{fg=colorExample}%
+  \setbeamercolor{standout}{bg=colorStandout, fg=colorPale}%
+}
+
+% ----------------------------
+% Logos and title page assets
+% ----------------------------
+\newcommand{\BrandSquareLogoPath}{assets/logo-square.pdf}
+\newcommand{\BrandCircleLogoPath}{assets/logo-circle.pdf}
+\newcommand{\BrandTitleLogoPathPDF}{assets/logo-title.pdf}
+\newcommand{\BrandTitleLogoPathPNG}{assets/logo-title.png}
+\newcommand{\BrandTitleBackgroundPath}{assets/title-bg.pdf}
+
+\IfFileExists{\BrandSquareLogoPath}{
+  \renewcommand{\gothamInstituteLogoSquare}[1][4ex]{%
+    \includegraphics[height=#1]{\BrandSquareLogoPath}%
+  }
+}{}
+
+\IfFileExists{\BrandCircleLogoPath}{
+  \renewcommand{\gothamInstituteLogoCircle}[1][4ex]{%
+    \includegraphics[height=#1]{\BrandCircleLogoPath}%
+  }
+}{}
+
+\IfFileExists{\BrandTitleLogoPathPDF}{
+  \renewcommand{\gothamtitlepagelogo}{%
+    \begin{tikzpicture}[remember picture,overlay]
+      \node[anchor=north east,inner sep=0pt,xshift=-0.7cm,yshift=-0.7cm] at (current page.north east) {%
+        \includegraphics[height=1.15cm]{\BrandTitleLogoPathPDF}%
+      };
+    \end{tikzpicture}%
+  }
+}{}
+
+\IfFileExists{\BrandTitleLogoPathPNG}{
+  \renewcommand{\gothamtitlepagelogo}{%
+    \begin{tikzpicture}[remember picture,overlay]
+      \node[anchor=north east,inner sep=0pt,xshift=-0.7cm,yshift=-0.7cm] at (current page.north east) {%
+        \includegraphics[height=1.15cm]{\BrandTitleLogoPathPNG}%
+      };
+    \end{tikzpicture}%
+  }
+}{}
+
+\IfFileExists{\BrandTitleBackgroundPath}{
+  \renewcommand{\gothamtitlepagebg}{%
+    \includegraphics[width=\paperwidth,height=\paperheight]{\BrandTitleBackgroundPath}%
+  }
+}{}
+
+% Optional footer hook (left empty by default).
+\renewcommand{\gothamHookFooter}{%
+  % Example:
+  % \hspace*{1em}\textcolor{colorB}{\tiny Internal}
+}
+
+% Custom footer: date + author only (no centered short title).
+\defbeamertemplate{frame footer}{default/personal-minimal}{%
+  \hspace{\gothamLeftFooterPadding}%
+  \insertshortdate%
+  \hfill%
+  \insertshortauthor%
+  \strut%
+  \vspace*{\gothamFooterHOffset}%
+}
+
+% Standin/standout typography controls.
+% Standin is kept strong but not bold; standout is the emphatic slide.
+\setbeamerfont{standin}{size=\Large,series=\mdseries}
+\setbeamerfont{standout}{size=\LARGE,series=\bfseries}
+
+% ----------------------------
+% Theme defaults
+% ----------------------------
+\gothamset{
+  background=light,
+  block=fill,
+  % Keep custom colorlets from this file; avoid resetting to Gotham defaults.
+  numbering=totalframenumber,
+  progressbar position=foot,
+  progressbar style=rounded box,
+  progressbar advancement=tlbr,
+  title page=gotham normal,
+  tocframe template=gotham bullet,
+  footer template=personal-minimal,
+  partframe default=off,
+  sectionframe default=on,
+  subsectionframe default=off,
+  subsubsectionframe default=off,
+  parttocframe default=off,
+  sectiontocframe default=off,
+  subsectiontocframe default=off,
+  watermark default=off,
+  edging default=off,
+  rotateFooter default=off
+}
+
+% Keep block variants aligned with the brand palette.
+\setbeamercolor{block title}{fg=colorPale, bg=colorA}
+\setbeamercolor{block body}{fg=colorDark, bg=colorB!55!colorPale}
+\setbeamercolor{block title alerted}{fg=colorPale, bg=colorAlert}
+\setbeamercolor{block body alerted}{fg=colorDark, bg=colorAlert!12!colorPale}
+\setbeamercolor{block title example}{fg=colorPale, bg=colorExample}
+\setbeamercolor{block body example}{fg=colorDark, bg=colorExample!12!colorPale}
+
+% TOC number circles should follow the primary brand, not alert color.
+\tikzset{section number/.style={
+  circle,
+  fill=colorA,
+  minimum size=0.4em,
+  text=colorPale,
+  inner sep=1.5pt,
+}}

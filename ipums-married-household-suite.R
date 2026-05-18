@@ -1052,6 +1052,63 @@ if (!file.exists(merged_pair_file)) {
   save_plot("ipums_hh_female_work_share_by_quintile_dem_vs_rep_kids.png",
             { print(p12d) }, width = 2000, height = 1200)
 
+  # --- 12e) Female work share by income quintile × political direction × frontier ---
+  frontier_lu <- fread(
+    file.path(panel_dir, "bazzi_frontier_indicators.csv"),
+    select     = c("fips", "is_frontier"),
+    colClasses = c(fips = "character", is_frontier = "integer")
+  )
+
+  if ("fips" %in% names(mpairs)) {
+    mpairs_f <- merge(
+      mpairs,
+      frontier_lu,
+      by    = "fips",
+      all.x = TRUE
+    )
+    mpairs_f <- mpairs_f[!is.na(is_frontier)]
+    mpairs_f[, frontier_label := fifelse(is_frontier == 1,
+                                         "Frontier counties",
+                                         "Non-frontier counties")]
+
+    pols_q_front <- mpairs_f[
+      !is.na(income_quintile) & !is.na(political_direction),
+      .(
+        female_work_share = weighted_mean_safe(as.numeric(female_empstat == 1), HHWT),
+        n_hh              = .N
+      ),
+      by = .(frontier_label, political_direction, income_quintile)
+    ][order(frontier_label, political_direction, income_quintile)]
+
+    p12e <- ggplot(
+      pols_q_front[!is.na(political_direction)],
+      aes(x = income_quintile, y = female_work_share * 100,
+          color = political_direction, group = political_direction)
+    ) +
+      geom_line(linewidth = 1.1) +
+      geom_point(size = 2.5) +
+      facet_wrap(~frontier_label) +
+      scale_x_continuous(breaks = 1:5,
+                         labels = c("Q1\n(poorest)", "Q2", "Q3", "Q4", "Q5\n(richest)")) +
+      scale_color_manual(values = c("Democratic-majority" = "#4575b4",
+                                    "Republican-majority"  = "#d73027")) +
+      labs(
+        title    = "Female work share by income quintile: Dem vs Rep × frontier status",
+        subtitle = "Married opposite-sex HH, IPUMS 2010-2020; frontier = Bazzi et al. (2025)",
+        x        = "Household income quintile (within year)",
+        y        = "Female work share (%)",
+        color    = NULL
+      ) +
+      theme_minimal(base_size = 12) +
+      theme(legend.position = "bottom",
+            strip.text = element_text(face = "bold"))
+    save_plot("ipums_hh_gradient_dem_vs_rep_frontier.png",
+              { print(p12e) }, width = 2400, height = 1200)
+    message("Section 12e: frontier-stratified female work share graph saved.")
+  } else {
+    message("Section 12e skipped: fips column not found in pairs file.")
+  }
+
   message("Section 12 complete.")
 }
 message("Wrote: ", validation_file)

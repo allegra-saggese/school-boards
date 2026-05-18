@@ -604,6 +604,108 @@ save_plot("departure_trad_vs_demrich_female_lfpr_trend.png",
           { print(p_trad_trend) }, width = 1800, height = 1100)
 
 # --- Group mutual-exclusivity check ---
+# =========================================================
+# 6e) FRONTIER STRATIFICATION: Dem vs Rep × frontier/non-frontier
+# =========================================================
+# Replicate 6b (LFPR by quintile) and 6c (Q5 trend), stratified by
+# Bazzi et al. frontier indicator. Prediction: the income-elastic
+# norm gap should be amplified in frontier counties.
+
+frontier_lookup <- read_csv(
+  file.path(panel_dir, "bazzi_frontier_indicators.csv"),
+  col_select = c(fips, is_frontier),
+  col_types  = cols(fips = col_character(), is_frontier = col_integer()),
+  show_col_types = FALSE
+)
+
+lfpr_frontier <- lfpr_panel %>%
+  mutate(fips = as.character(fips)) %>%
+  left_join(frontier_lookup, by = "fips") %>%
+  filter(!is.na(is_frontier)) %>%
+  mutate(frontier_label = if_else(is_frontier == 1,
+                                  "Frontier counties",
+                                  "Non-frontier counties"))
+
+# 6e-i) LFPR by quintile × Dem/Rep, faceted by frontier
+quintile_frontier <- lfpr_frontier %>%
+  filter(!is.na(vote_margin), !is.na(lfpr_female),
+         is.finite(income_quintile_national)) %>%
+  mutate(
+    political_direction = if_else(vote_margin > 0,
+                                  "Democratic-majority", "Republican-majority")
+  ) %>%
+  group_by(frontier_label, political_direction, income_quintile_national) %>%
+  summarise(
+    lfpr_female_mean = mean(lfpr_female, na.rm = TRUE),
+    n_county_years   = n(),
+    .groups = "drop"
+  )
+
+p_quintile_frontier <- ggplot(
+  quintile_frontier,
+  aes(x = income_quintile_national, y = lfpr_female_mean,
+      color = political_direction, group = political_direction)
+) +
+  geom_line(linewidth = 1.1) +
+  geom_point(size = 2.5) +
+  facet_wrap(~frontier_label) +
+  scale_x_continuous(breaks = 1:5,
+                     labels = c("Q1\n(poorest)", "Q2", "Q3", "Q4", "Q5\n(richest)")) +
+  scale_color_manual(values = c("Democratic-majority" = "#4575b4",
+                                "Republican-majority"  = "#d73027")) +
+  labs(
+    title    = "Female LFPR by income quintile: Dem vs Rep × frontier status",
+    subtitle = "County-year means, ACS 2010-2020; frontier = Bazzi et al. (2025)",
+    x        = "County national income quintile",
+    y        = "Mean female LFPR (%, ages 20-64)",
+    color    = NULL
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom",
+        strip.text = element_text(face = "bold"))
+save_plot("departure_female_lfpr_by_quintile_dem_vs_rep_frontier.png",
+          { print(p_quintile_frontier) }, width = 2400, height = 1200)
+
+# 6e-ii) Q5 time trend × Dem/Rep, faceted by frontier
+q5_trend_frontier <- lfpr_frontier %>%
+  filter(income_quintile_national == 5,
+         !is.na(vote_margin), !is.na(lfpr_female)) %>%
+  mutate(
+    political_direction = if_else(vote_margin > 0,
+                                  "Democratic-majority", "Republican-majority")
+  ) %>%
+  group_by(frontier_label, political_direction, year) %>%
+  summarise(
+    lfpr_female_mean = mean(lfpr_female, na.rm = TRUE),
+    n_counties       = n(),
+    .groups = "drop"
+  )
+
+p_q5_trend_frontier <- ggplot(
+  q5_trend_frontier,
+  aes(x = year, y = lfpr_female_mean,
+      color = political_direction, group = political_direction)
+) +
+  geom_line(linewidth = 1.1) +
+  geom_point(size = 2.5) +
+  facet_wrap(~frontier_label) +
+  scale_color_manual(values = c("Democratic-majority" = "#4575b4",
+                                "Republican-majority"  = "#d73027")) +
+  labs(
+    title    = "Q5 female LFPR trend: Dem vs Rep × frontier status",
+    subtitle = "Only nationally Q5 counties, 2010-2020; frontier = Bazzi et al. (2025)",
+    x        = "Year",
+    y        = "Mean female LFPR (%, ages 20-64)",
+    color    = NULL
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom",
+        strip.text = element_text(face = "bold"))
+save_plot("departure_q5_female_lfpr_trend_dem_vs_rep_frontier.png",
+          { print(p_q5_trend_frontier) }, width = 2400, height = 1100)
+
+message("Section 6e complete: frontier-stratified LFPR graphs saved.")
+
 overlap_check <- lfpr_panel %>%
   mutate(group_sum = trad + asp_trad + dem_solid_poor + dem_solid_rich) %>%
   summarise(

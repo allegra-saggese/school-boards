@@ -1,0 +1,588 @@
+\documentclass[10pt,aspectratio=169]{beamer}
+\usetheme{gotham}
+\input{gotham-personal}
+
+% ── Packages ──────────────────────────────────────────────────────────────────
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{amsmath, amssymb}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage{hyperref}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning}
+
+% ── Metadata ──────────────────────────────────────────────────────────────────
+\title[Identity norms \& work]{Identity norms and the decision to work}
+\subtitle{The income-elastic breadwinner norm}
+\author[Saggese]{Allegra Saggese\textsuperscript{1}}
+\institute{\textsuperscript{1}UC Santa Cruz}
+\date[May 2026]{May 2026}
+
+% ── Convenience macros ────────────────────────────────────────────────────────
+\newcommand{\fig}[2][0.82\textwidth]{%
+  \begin{center}
+    \includegraphics[width=#1]{#2}
+  \end{center}
+}
+\newcommand{\twofig}[2]{%
+  \begin{columns}[c]
+    \column{0.5\textwidth}\centering\includegraphics[width=\linewidth]{#1}
+    \column{0.5\textwidth}\centering\includegraphics[width=\linewidth]{#2}
+  \end{columns}
+}
+
+% ── Graph path root (relative to this file) ───────────────────────────────────
+\graphicspath{{../data/graphs/}}
+
+% ── Citation style ────────────────────────────────────────────────────────────
+\setbeamertemplate{bibliography item}[text]
+
+% ==============================================================================
+\begin{document}
+% ==============================================================================
+
+\maketitle
+
+% ── Agenda ────────────────────────────────────────────────────────────────────
+\begin{frame}[toc]{Agenda}
+  \tableofcontents
+\end{frame}
+
+% ==============================================================================
+\section{Motivation}
+% ==============================================================================
+
+\begin{frame}{The long-run picture}
+  \begin{columns}[c]
+    \column{0.60\textwidth}
+      % Replace with FRED screenshot: LFPR Women (green) and Men (purple), 1950-2024
+      % Use the same figure as Round 2 slide 3 (FRED export)
+      \fbox{\parbox{\linewidth}{\centering\vspace{2cm}
+        \textit{[Figure: Male and Female LFPR, US, 1950–2024 \\
+        Source: FRED, BLS]}
+      \vspace{2cm}}}
+    \column{0.40\textwidth}
+      \begin{itemize}
+        \item Female LFPR rose from 33\% (1950) to $\sim$58\% (2024)
+        \item \textbf{Since $\sim$2000: gains have stalled}
+        \item Male LFPR declining; female LFPR flat
+        \item No country has female LFPR exceeding male
+              \citep{SaezGethin2026, RameyFrancis2009}
+      \end{itemize}
+  \end{columns}
+  \vspace{0.5em}
+  \begin{block}{The puzzle}
+    If institutional barriers have fallen \citep{Goldin1992, Goldin2023},
+    why has progress stalled?
+  \end{block}
+\end{frame}
+
+\begin{frame}{Where women have stopped gaining}
+  \begin{columns}[c]
+    \column{0.55\textwidth}
+      \begin{itemize}
+        \item Female gains came primarily on the \textbf{extensive margin}
+              (more women entering) \citep{SaezGethin2026}
+        \item Today: US women now exceed men in college attainment
+              (47\% BA/BS vs.\ 37\% for men; Pew 2024)
+        \item Women earn more than men in 22 metro areas (Pew 2022)
+        \item And yet: \textbf{no country has seen female LFPR cross male LFPR}
+      \end{itemize}
+    \column{0.45\textwidth}
+      \begin{exampleblock}{US is anomalous}
+        Women's participation still growing in most OECD countries.
+        US stagnated earlier and is farther behind — not explained
+        by religion or institutions alone.
+      \end{exampleblock}
+      \medskip
+      \begin{alertblock}{Implication}
+        The barrier today is not a broken ladder or glass ceiling
+        preventing entry — it constrains \emph{how much} women work.
+      \end{alertblock}
+  \end{columns}
+\end{frame}
+
+\begin{standinenv}
+\begin{frame}{Research question}
+  Do persistent gender norms materialize in women's US labor market
+  decisions today — and is the norm stronger where households
+  can \emph{afford} to enforce it?
+\end{frame}
+\end{standinenv}
+
+% ==============================================================================
+\section{What we know}
+% ==============================================================================
+
+\begin{frame}{How women entered the labor force}
+  Recall the evidence on the rise in female LFPR (extensive margin),
+  adapted from \citet{Goldin1992, Goldin2023}:
+  \begin{itemize}
+    \item Development of birth control
+    \item Removal of legislation prohibiting women from teaching and clerical jobs
+    \item Title IX and women's workplace protections
+    \item The Equal Pay Act and Civil Rights Act
+    \item Rising access to education; mainstreaming of the dual-income household
+  \end{itemize}
+  \medskip
+  \textbf{Today:} institutional barriers have largely fallen.
+  \textit{Something else} is now holding the intensive margin down.
+\end{frame}
+
+\begin{frame}{Evidence is building that norms play a role}
+  \begin{itemize}
+    \item[$\Rightarrow$] Norms have been neglected in economics because they are
+          incompatible with modeling preferences cleanly \citep{Lundberg2025}
+    \item[$\Rightarrow$] Gender norms influence Japanese households to shift female
+          labor toward domestic work to minimize household cost
+          \citep{SakamotoKohara2025}
+    \item[$\Rightarrow$] Gender norms constrain economic growth in developing
+          countries, like a poverty trap \citep{Fieldetal2026}
+    \item[$\Rightarrow$] Historical evidence from America's frontier shows the
+          \textbf{persistence of gender norms} in areas that were once
+          homesteader populations \citep{Bazzietal2025}
+    \item[$\Rightarrow$] Masculinity norms persist when the sex ratio favors men
+          \citep{Baranovetal2023}
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{The breadwinner norm: Bertrand, Kamenica \& Pan (2015)}
+  \citet{BertrandKamenicaPan2015} document that \textbf{US couples
+  systematically avoid the wife out-earning the husband}:
+  \begin{columns}[c]
+    \column{0.48\textwidth}
+      \begin{itemize}
+        \item Sharp drop in couple density at $z = 0.5$ (wife's share of
+              household earnings)
+        \item When wife earns more: lower marriage rates, higher divorce,
+              lower female LFPR
+        \item Effect robust across demographics and time periods
+              (CPS/Census, 1970–2013)
+        \item \textbf{Reported uniformly across the income distribution}
+      \end{itemize}
+    \column{0.52\textwidth}
+      % BKP Table II screenshot from Round 2 slides
+      \fbox{\parbox{\linewidth}{\centering\vspace{1.8cm}
+        \textit{[BKP Table II — \\
+        Wife in labor force $\sim$ PrWifeEarnsMore]}
+      \vspace{1.8cm}}}
+  \end{columns}
+  \medskip
+  \begin{alertblock}{Gap in BKP}
+    They do not test whether the threshold effect varies with
+    \emph{household income level}. We fill this gap.
+  \end{alertblock}
+\end{frame}
+
+% ==============================================================================
+\section{A new narrative}
+% ==============================================================================
+
+\begin{frame}{A five-point historical arc}
+  \begin{enumerate}
+    \item Women gained exposure to work to fulfill a patriotic duty under WWII
+    \item Returned home under booming postwar conditions (rising GDP, low
+          inequality, government encouragement of homeownership)
+    \item Institutional transformations (Goldin 1992) and rising opportunity
+          cost of having children drove female LFPR up from the 1970s onward
+    \item 1980s–2000s: rising wage inequality forced \textbf{dual-income necessity}
+          at middle incomes — economic constraints overrode norm at Q1–Q3
+    \item Today: top incomes have exploded; at the top quintile, the ``price''
+          of norm enforcement (foregone female income) is once again affordable
+  \end{enumerate}
+  \medskip
+  \textbf{Key implication:} the norm did not change — \emph{who can act on it did.}
+\end{frame}
+
+\begin{frame}{Wealth inequality re-stratified norm enforcement}
+  \begin{columns}[c]
+    \column{0.50\textwidth}
+      \begin{block}{1950s–1960s (low inequality)}
+        Breadwinner arrangement broadly affordable.\\
+        Norm had roughly uniform bite across middle class.
+      \end{block}
+      \medskip
+      \begin{block}{1980s–2000s (rising inequality)}
+        Dual-income becomes economic necessity for Q1–Q3.\\
+        Economics override the norm at middle incomes.\\
+        \textbf{Norm appears to go dormant.}
+      \end{block}
+      \medskip
+      \begin{alertblock}{2010s–2020s (high inequality)}
+        Top quintile income explodes.\\
+        Foregone wife's income ($\sim$\$50–60k) trivial at \$150k+ male income.\\
+        \textbf{Norm re-emerges — now concentrated at the top.}
+      \end{alertblock}
+    \column{0.50\textwidth}
+      \begin{itemize}
+        \item BKP (2015) data run to 2013 — they find a uniform average effect
+        \item That average is dominated by Q4–Q5 households
+        \item The income-elastic pattern would be invisible if not stratified
+        \item \textbf{New prediction:} BKP avoidance behavior should be
+              increasingly top-concentrated as inequality rises
+        \item Testable in 1980–2023 IPUMS data: run BKP density ratio by
+              income decile and year
+      \end{itemize}
+  \end{columns}
+\end{frame}
+
+% ==============================================================================
+\section{The income-elastic norm: stylized facts}
+% ==============================================================================
+
+\begin{frame}{Stylized fact 1 — the gap is income-elastic}
+  \textbf{Female working share by HH income quintile, Democrat vs.\ Republican counties,
+  IPUMS 2010–2020}
+  \fig{2026-05-07_ipums_hh_gradient_dem_vs_rep_2010_2020.png}
+  \begin{itemize}
+    \item Q1–Q3: \textbf{zero gap} between Dem and Rep counties
+    \item Q4: $+0.9$pp gap; \textbf{Q5: $+2.35$pp gap}
+    \item Both groups peak at Q4 then decline at Q5; Rep decline is steeper ($-3.3$pp vs.\ $-1.9$pp)
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Stylized fact 2 — male-only earner re-emerges at the top}
+  \textbf{Share of male-only earner households by income quintile,
+  Democrat vs.\ Republican counties}
+  \fig{2026-05-07_ipums_hh_male_only_gradient_dem_vs_rep_2010_2020.png}
+  \begin{itemize}
+    \item At Q5, Republican counties: male-only earner rises from 16\% $\to$ 20\%
+    \item Democrat counties Q5: 16\% $\to$ 18\%
+    \item \textbf{The traditional breadwinner household is a high-income conservative
+          phenomenon, not a poverty story}
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Stylized fact 3 — the norm is entirely on the wife's side}
+  \textbf{Weekly hours by income decile — husband (dashed) and wife (solid),
+  Democrat vs.\ Republican counties}
+  \fig[0.78\textwidth]{2026-05-11_hours_by_income_decile_husband_wife_dem_vs_rep.png}
+  \begin{columns}[c]
+    \column{0.5\textwidth}
+      \begin{itemize}
+        \item Wife hours peak D8–D9, then \textbf{drop at D10} for both groups
+        \item Rep wife D10: 29.2 hrs/wk; Dem wife D10: 31.4 hrs/wk
+              ($-2.2$ hr gap at the top)
+      \end{itemize}
+    \column{0.5\textwidth}
+      \begin{itemize}
+        \item \textbf{Husband hours: monotonically rising, nearly identical across
+              political groups} (Rep 45.9, Dem 46.2 at D10)
+        \item The pullback is gendered and concentrated at the top
+      \end{itemize}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Stylized fact 4 — gap requires a strong political signal}
+  \textbf{Q5 county female LFPR by political lean}
+  \fig[0.70\textwidth]{2026-05-07_departure_q5_female_lfpr_by_political_lean.png}
+  \begin{itemize}
+    \item Among nationally Q5 counties:
+          Strongly Dem 76.8\%, Lean Dem 75.7\%, Lean Rep 76.6\%,
+          \textbf{Strongly Rep 74.0\%}
+    \item Gap is \textbf{non-monotonic}: Lean Rep has \emph{higher} LFPR than Lean Dem
+    \item Norm only operates with $>10$pp vote margin — not a smooth cultural gradient
+    \item Consistent with an identity norm that requires social reinforcement
+          to operate \citep{AkerlofKranton2000}
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Stylized fact 5 — the gap is persistent, not converging}
+  \textbf{Q5 county female LFPR trend, Democrat vs.\ Republican, 2012–2020}
+  \fig[0.72\textwidth]{2026-05-07_departure_q5_female_lfpr_trend_dem_vs_rep.png}
+  \begin{itemize}
+    \item Dem counties Q5: stable $\sim$76–77\%; Rep counties Q5: stable $\sim$74–74.5\%
+    \item Gap is \textbf{flat}: not a legacy of earlier sorting that is converging away
+    \item Consistent with a persistent norm, not a transitional composition effect
+  \end{itemize}
+\end{frame}
+
+% ==============================================================================
+\section{Evidence for the mechanism}
+% ==============================================================================
+
+\begin{frame}{Her threat point weakens exactly where the norm operates}
+  \textbf{Spousal income (no transfers) vs.\ log(HH income), by anchor year}
+  \fig[0.82\textwidth]{2026-05-07_ipums_spouse_wage_income_by_hh_income_anchor_years.png}
+  \begin{itemize}
+    \item At \$200k HH income (2010): husband earns $\sim$\$150k, wife $\sim$\$50–60k
+    \item \textbf{Male income: near-linear with HH income}
+    \item \textbf{Female income: plateaus} — her contribution flattens as HH income rises
+    \item Pattern consistent and sharpening 1980–2023
+    \item The husband's outside option grows; hers does not — bargaining power shifts
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Wife's earned share by income decile}
+  \textbf{Wife's share of couple earned income, Democrat vs.\ Republican counties}
+  \fig[0.72\textwidth]{2026-05-11_share_vs_hh_income_decile_dem_vs_rep.png}
+  \begin{itemize}
+    \item Wife's share falls monotonically D1 $\to$ D10 for both groups
+          ($\sim$42\% $\to$ $\sim$33\%)
+    \item Gap at D10: Dem 34.3\%, Rep 32.2\% $\Rightarrow$ \textbf{2.08pp gap}
+    \item Gap is small and parallel D1–D9; \textbf{widens sharply at D10}
+    \item Consistent with norm suppressing her income share precisely where husband's
+          outside option is strongest
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Avoidance behavior at the breadwinner threshold}
+  \textbf{Density of wife's earned income share ($z_{\text{earned}}$),
+  Democrat vs.\ Republican counties — donut $\pm 2$pp at $z = 0.5$}
+  \fig[0.75\textwidth]{2026-05-11_rdd_donut_density_earned_income_share_dem_vs_rep.png}
+  \begin{columns}[c]
+    \column{0.5\textwidth}
+      \begin{itemize}
+        \item Clear bunching just below $z = 0.5$ in both groups
+        \item Below/above $z=0.5$ ratio: \\
+              Dem: $14.5\% / 10.2\% = \mathbf{1.42}$ \\
+              Rep: $14.4\% / 9.6\% = \mathbf{1.50}$
+      \end{itemize}
+    \column{0.5\textwidth}
+      \begin{itemize}
+        \item \textbf{Rep counties show $\sim$5\% stronger avoidance}
+        \item Replicates BKP (2015) nationally; extends to Dem/Rep heterogeneity
+        \item Donut design removes mechanical mass point at exactly $z=0.50$
+              (3.96\% of weighted obs)
+      \end{itemize}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Kink RDD: wife's hours collapse at the breadwinner threshold}
+  \textbf{Kink RDD on wife's weekly hours — running variable $z_{\text{earned}}$,
+  donut $\pm 2$pp, bandwidth $\pm 20$pp}
+  \fig[0.75\textwidth]{2026-05-11_rdd_donut_kink_wife_hours_earned_income.png}
+  \begin{columns}[c]
+    \column{0.55\textwidth}
+      \begin{itemize}
+        \item Below threshold: wife scales up hours $+27.5$ hrs/pp as share rises
+        \item \textbf{At threshold: slope nearly collapses} — net slope $\sim 2.3$ hrs/pp
+        \item Kink = $-25.2$ hrs/pp ($p < 0.001$)
+        \item Jump = $-0.386$ hrs ($p < 0.001$)
+        \item Wife employment: Jump $= -0.007$ ($p < 0.001$)
+      \end{itemize}
+    \column{0.45\textwidth}
+      \begin{itemize}
+        \item \textbf{Husband hours: NOT kinked} (Jump $= +0.12$, symmetric kink)
+        \item Robustness: kink stable at $\sim$25 hrs/pp across donut widths
+              $\pm 1$pp, $\pm 2$pp, $\pm 3$pp
+        \item Identification: she is already working and has positive earned
+              income — pure wealth effects do not explain the avoidance at the
+              threshold
+      \end{itemize}
+  \end{columns}
+\end{frame}
+
+% ==============================================================================
+\section{Model}
+% ==============================================================================
+
+\begin{frame}{Departure from existing models}
+  \begin{columns}[c]
+    \column{0.50\textwidth}
+      \begin{block}{Existing norm models}
+        \citet{AkerlofKranton2000}, \citet{FernandezFogliGuner2005},
+        \citet{FogliVeldkamp2011}, \citet{BisinVerdier2000}:
+        \begin{itemize}
+          \item Norm strength $\tau$ is a fixed cultural parameter
+          \item Transmitted across generations; varies by county or group
+          \item Does not interact with household income
+        \end{itemize}
+        \textbf{Prediction:} uniform gap across income distribution
+        within conservative counties.
+      \end{block}
+    \column{0.50\textwidth}
+      \begin{alertblock}{Our departure}
+        Norm penalty is \textbf{income-elastic}:
+        $\theta(\tau, y)$ increasing in both norm intensity $\tau$
+        and household income $y$.
+        \smallskip
+
+        Interpretation: a richer conservative household can
+        \emph{afford} to enforce the norm — the foregone income
+        of the wife is small relative to total household resources.
+        \smallskip
+
+        \textbf{Prediction:} zero gap at low income; positive and
+        growing gap at high income — exactly what we observe.
+      \end{alertblock}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Model: joint utility with income-elastic norm penalty}
+  \textbf{Setup:} Two agents $(H, W)$; household jointly maximizes utility.
+  \begin{align*}
+    U &= u(c) - v(l_H) - v(l_W) - \theta(\tau, y) \cdot \mathbf{1}\!\left[\frac{y_W}{y_H} \geq 1\right]
+  \end{align*}
+  where $c$ = consumption, $l_i$ = labor hours, $y_i$ = individual earned income,
+  $\tau$ = cultural norm intensity (county political lean), $y = y_H + y_W$.
+
+  \bigskip
+  \textbf{Norm penalty:}
+  \[
+    \theta(\tau, y) = \underbrace{\tau}_{\text{norm intensity}} \times \underbrace{g(y)}_{\text{increasing in }y}
+  \]
+  At low income: $g(y) \approx 0$ $\Rightarrow$ economics dominate $\Rightarrow$ zero gap. \\
+  At high income: $g(y)$ large $\Rightarrow$ norm operates $\Rightarrow$ positive gap.
+
+  \bigskip
+  \textbf{Enforcement:} Both spouses internalize $\theta$
+  \citep{AkerlofKranton2000} — norm is not an external constraint but a
+  shared identity cost, reinforced by in-group culture.
+\end{frame}
+
+\begin{frame}{Model predictions vs.\ data}
+  \begin{columns}[c]
+    \column{0.52\textwidth}
+      \begin{block}{Model predictions}
+        \begin{enumerate}
+          \item Zero gap at Q1–Q3: $\theta(\tau, y_{\text{low}}) \approx 0$
+          \item Positive gap at Q4–Q5: $\theta(\tau, y_{\text{high}}) > 0$,
+                increasing in $\tau$
+          \item Wife's hours kink at $z = 0.5$, sharper in high-$\tau$ counties
+          \item Husband's hours: unaffected by $\tau$ or income (his outside
+                option grows, but the identity cost falls on the wife)
+          \item Gap strengthens over time as top-quintile income rises
+                (via $g(y)$)
+        \end{enumerate}
+      \end{block}
+    \column{0.48\textwidth}
+      \begin{exampleblock}{Calibration targets}
+        \begin{tabular}{ll}
+          \toprule
+          Moment & Value \\
+          \midrule
+          Work share gap Q1 & 0pp \\
+          Work share gap Q5 & 2.35pp \\
+          Hours gap D10 (Dem) & 14.8 hrs \\
+          Hours gap D10 (Rep) & 16.7 hrs \\
+          BKP ratio (Dem)  & 1.42 \\
+          BKP ratio (Rep)  & 1.50 \\
+          Kink hrs/pp      & $-25.2$ \\
+          \bottomrule
+        \end{tabular}
+      \end{exampleblock}
+  \end{columns}
+\end{frame}
+
+% ==============================================================================
+\section{Next steps}
+% ==============================================================================
+
+\begin{frame}{Identification strategy}
+  \textbf{Causal identification: school board elections (Ballotopedia)}
+  \begin{itemize}
+    \item Descriptive evidence is consistent with norm suppression, but
+          cannot rule out time-invariant sorting or industrial composition
+    \item \textbf{Planned event study:} close elections to conservative school
+          boards shift county-level gender norm environment
+    \item Outcome: female LFPR, wife's hours, wife's earned share — at the
+          household level, stratified by income decile
+    \item \textbf{Expected pattern under income-elastic norm hypothesis:}
+          a conservative school board win should have zero effect at Q1–Q3
+          and a negative effect on wife's hours/LFPR at Q4–Q5
+  \end{itemize}
+  \medskip
+  \textbf{Additional robustness:}
+  \begin{itemize}
+    \item RDD political interaction: is the kink in wife's hours sharper
+          in strongly Republican counties? (designed, not yet run)
+    \item Better norm proxy: CCES county-level gender attitudes (direct survey
+          items on breadwinner expectations), ARDA evangelical share
+    \item Occupation/education controls to rule out labor market composition
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Takeaways}
+  \begin{enumerate}
+    \item \textbf{New stylized fact:} the conservative-liberal LFPR differential
+          is zero below the top income quintile and concentrates sharply at Q5.
+          This income-elastic pattern has not been previously documented.
+    \smallskip
+    \item \textbf{The norm is on the wife, not the husband:} at D10, wives in
+          Republican counties work 2.2 fewer hours per week than in Democratic
+          counties; husbands are virtually identical.
+    \smallskip
+    \item \textbf{Breadwinner threshold:} replicating and extending BKP (2015),
+          a kink of $-25.2$ hrs/pp at $z=0.5$ (wife's earned share), stronger
+          avoidance in Republican counties (ratio 1.50 vs.\ 1.42).
+    \smallskip
+    \item \textbf{Model departure:} existing models treat norm strength as fixed.
+          We propose an income-elastic norm penalty $\theta(\tau, y)$, consistent
+          with rising wealth inequality re-stratifying who can enforce the norm.
+  \end{enumerate}
+\end{frame}
+
+% ── Questions ─────────────────────────────────────────────────────────────────
+\begin{frame}[standout]
+  Questions?
+\end{frame}
+
+% ==============================================================================
+% References
+% ==============================================================================
+\begin{frame}[allowframebreaks]{References}
+  \footnotesize
+  \begin{thebibliography}{99}
+    \bibitem{AkerlofKranton2000}
+      Akerlof, G.\ A., \& Kranton, R.\ E.\ (2000).
+      Economics and identity.
+      \textit{Quarterly Journal of Economics}, 115(3), 715--753.
+    \bibitem{Baranovetal2023}
+      Baranov, V., et al.\ (2023).
+      Masculinity norms and economic behavior.
+      \textit{Working paper}.
+    \bibitem{Bazzietal2025}
+      Bazzi, S., et al.\ (2025).
+      The frontier of gender norms.
+      \textit{Working paper}.
+    \bibitem{BertrandKamenicaPan2015}
+      Bertrand, M., Kamenica, E., \& Pan, J.\ (2015).
+      Gender identity and relative income within households.
+      \textit{Quarterly Journal of Economics}, 130(2), 571--614.
+    \bibitem{BisinVerdier2000}
+      Bisin, A., \& Verdier, T.\ (2000).
+      ``Beyond the melting pot'': Cultural transmission, marriage, and
+      the evolution of ethnic and religious traits.
+      \textit{Quarterly Journal of Economics}, 115(3), 955--988.
+    \bibitem{FernandezFogliGuner2005}
+      Fern\'{a}ndez, R., Fogli, A., \& Olivetti, C.\ (2004).
+      Mothers and sons: Preference formation and female labor force dynamics.
+      \textit{Quarterly Journal of Economics}, 119(4), 1249--1299.
+    \bibitem{Fieldetal2026}
+      Field, E., et al.\ (2026).
+      Gender norms and poverty traps.
+      \textit{Working paper}.
+    \bibitem{FogliVeldkamp2011}
+      Fogli, A., \& Veldkamp, L.\ (2011).
+      Nature or nurture? Learning and the geography of female labor force
+      participation.
+      \textit{Econometrica}, 79(4), 1103--1138.
+    \bibitem{Goldin1992}
+      Goldin, C.\ (1992).
+      Understanding the gender gap: An economic history of American women.
+      \textit{Oxford University Press}.
+    \bibitem{Goldin2023}
+      Goldin, C.\ (2023).
+      Career and family: Women's century-long journey toward equity.
+      \textit{Princeton University Press}.
+    \bibitem{Lundberg2025}
+      Lundberg, S.\ (2025).
+      Norms and economics.
+      \textit{Working paper}.
+    \bibitem{RameyFrancis2009}
+      Ramey, V.\ A., \& Francis, N.\ (2009).
+      A century of work and leisure.
+      \textit{American Economic Journal: Macroeconomics}, 1(2), 189--224.
+    \bibitem{SakamotoKohara2025}
+      Sakamoto, A., \& Kohara, M.\ (2025).
+      Gender norms and female labor allocation.
+      \textit{Working paper}.
+    \bibitem{SaezGethin2026}
+      Saez, E., \& Gethin, A.\ (2026).
+      Labor force participation trends.
+      \textit{Working paper}.
+  \end{thebibliography}
+\end{frame}
+
+\end{document}
