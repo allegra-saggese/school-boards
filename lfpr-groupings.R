@@ -706,6 +706,70 @@ save_plot("departure_q5_female_lfpr_trend_dem_vs_rep_frontier.png",
 
 message("Section 6e complete: frontier-stratified LFPR graphs saved.")
 
+# =========================================================
+# 6f) National election year scatter: LFPR vs log(income)
+#     colored by frontier status instead of vote margin
+# =========================================================
+# Replicates the 2026-05-07_national_election_years_lfpr_total_vote_margin.png
+# but with a binary frontier/non-frontier color scheme so the reader can see
+# whether the LFPR-income relationship differs by historical settlement pattern.
+
+lfpr_frontier_panel <- lfpr_panel %>%
+  mutate(fips = as.character(fips)) %>%
+  left_join(frontier_lookup, by = "fips") %>%
+  filter(!is.na(is_frontier)) %>%
+  mutate(frontier_label = if_else(is_frontier == 1,
+                                  "Frontier", "Non-frontier"))
+
+for (outcome_6f in c("lfpr_total", "lfpr_female", "lfpr_gap")) {
+  d6f <- lfpr_frontier_panel %>%
+    filter(year %in% c(2012, 2016, 2020),
+           !is.na(.data[[outcome_6f]]),
+           is.finite(log_income))
+
+  if (nrow(d6f) == 0) next
+
+  quintile_lines_6f <- d6f %>%
+    group_by(year) %>%
+    summarise(
+      q20 = quantile(log_income, 0.2, na.rm = TRUE),
+      q40 = quantile(log_income, 0.4, na.rm = TRUE),
+      q60 = quantile(log_income, 0.6, na.rm = TRUE),
+      q80 = quantile(log_income, 0.8, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    pivot_longer(cols = c(q20, q40, q60, q80),
+                 names_to = "q", values_to = "cutoff")
+
+  p6f <- ggplot(d6f, aes(x = log_income, y = .data[[outcome_6f]],
+                          color = frontier_label)) +
+    geom_point(alpha = 0.55, size = 0.75) +
+    geom_smooth(method = "lm", formula = y ~ x, se = FALSE,
+                linewidth = 0.8) +
+    geom_vline(data = quintile_lines_6f, aes(xintercept = cutoff),
+               inherit.aes = FALSE, linetype = "dashed",
+               color = "grey35", linewidth = 0.4) +
+    facet_wrap(~year, ncol = 3) +
+    scale_color_manual(
+      values = c("Frontier" = "#4A6FA5", "Non-frontier" = "#C0392B"),
+      name   = NULL
+    ) +
+    labs(
+      title    = paste0("National counties: ", outcome_6f,
+                        " by frontier status (election years)"),
+      subtitle = "Frontier = Bazzi et al. (2025): ever pop. density < 6/sq mi within 100km of frontier line, 1790–1890",
+      x        = "log(median household income)",
+      y        = outcome_6f
+    ) +
+    theme_minimal(base_size = 11) +
+    theme(legend.position = "bottom")
+
+  save_plot(paste0("national_election_years_", outcome_6f, "_frontier.png"),
+            { print(p6f) }, width = 2200, height = 900)
+}
+
+message("Section 6f complete: frontier election-year scatter graphs saved.")
+
 overlap_check <- lfpr_panel %>%
   mutate(group_sum = trad + asp_trad + dem_solid_poor + dem_solid_rich) %>%
   summarise(
