@@ -68,15 +68,13 @@ con <- dbConnect(SQLite(), sqlite_path)
 on.exit(dbDisconnect(con), add = TRUE)
 dbExecute(con, "PRAGMA busy_timeout = 5000")
 
-# Reuse the same indices ipums-county-household-analysis.R creates (cheap if
-# they already exist) — needed for the spouse self-join to run in reasonable time.
-invisible(lapply(
-  c(
-    "CREATE INDEX IF NOT EXISTS idx_ipums_year_geo ON ipums_table (YEAR, STATEICP, COUNTYICP)",
-    "CREATE INDEX IF NOT EXISTS idx_ipums_hh_spouse ON ipums_table (YEAR, SAMPLE, SERIAL, SPLOC)",
-    "CREATE INDEX IF NOT EXISTS idx_ipums_age_sex ON ipums_table (YEAR, AGE, SEX)"
-  ),
-  function(sql) dbExecute(con, sql)
+# Only one index is needed here: (YEAR, AGE, SEX) makes the per-year, per-sex
+# age-range pulls in pull_person_side() index-only scans. The other indices
+# ipums-county-household-analysis.R creates aren't used by this script, and
+# index creation on a 42GB table is slow and consumes scarce disk — so don't
+# create what we don't need. Already-existing index makes this a no-op.
+invisible(dbExecute(
+  con, "CREATE INDEX IF NOT EXISTS idx_ipums_age_sex ON ipums_table (YEAR, AGE, SEX)"
 ))
 
 # ── 0) Config ──────────────────────────────────────────────────────────────
@@ -191,43 +189,58 @@ cluster_se <- function(model, cluster_var) {
 # ── 2) Spouse-pair builder (BKP-style: no county filter, no household-size
 #      restriction beyond a mutual SPLOC link) ──────────────────────────────
 
+# PERFORMANCE NOTE: do NOT do this spouse match as a single SQL self-join.
+# ipums_table has no index on the join keys (YEAR, SAMPLE, SERIAL, PERNUM/
+# SPLOC), but it does have idx_ipums_age_sex (YEAR, AGE, SEX). Given both, the
+# SQLite planner picks the age index for BOTH sides of a self-join and then
+# nested-loops the match — billions of row comparisons, effectively a hang
+# (measured: >2.75 hours for one year, vs ~3.5s for the approach below).
+# Instead: two independent indexed range scans (fast, uses idx_ipums_age_sex),
+# then match in-memory with data.table. Building a join-key index on a 42GB
+# table is the other fix, but costs disk we don't have.
+pull_person_side <- function(yr, sex, age_range, extra_where = "") {
+  sql <- paste0(
+    "SELECT YEAR, SAMPLE, SERIAL, PERNUM, STATEICP, AGE, SEX, SPLOC, RACE, EDUC, ",
+    "EMPSTAT, UHRSWORK, WKSWORK1, INCWAGE, INCTOT, HHWT, PERWT, NCHILD ",
+    "FROM ipums_table WHERE YEAR = ", yr, " AND SEX = ", sex,
+    " AND AGE BETWEEN ", age_range[1], " AND ", age_range[2], extra_where
+  )
+  setDT(dbGetQuery(con, sql))
+}
+
 build_bkp_pairs <- function(years, wife_age = c(18, 65), husb_age = c(18, 65),
                              require_husb_working = FALSE) {
+  keys <- c("YEAR", "SAMPLE", "SERIAL")
   out <- vector("list", length(years))
   for (i in seq_along(years)) {
     yr <- years[i]
     message("  Building BKP spouse pairs for year ", yr, " (wife ", wife_age[1], "-",
             wife_age[2], ", husband ", husb_age[1], "-", husb_age[2], ")")
-    sql <- paste0(
-      "WITH base AS (",
-      "  SELECT YEAR, SAMPLE, SERIAL, PERNUM, STATEICP, AGE, SEX, SPLOC, RACE, EDUC,",
-      "         EMPSTAT, UHRSWORK, WKSWORK1, INCWAGE, INCTOT, HHWT, PERWT, NCHILD ",
-      "  FROM ipums_table WHERE YEAR = ", yr,
-      "), wife_cand AS (",
-      "  SELECT * FROM base WHERE SEX = 2 AND AGE BETWEEN ", wife_age[1], " AND ", wife_age[2],
-      "), husb_cand AS (",
-      "  SELECT * FROM base WHERE SEX = 1 AND AGE BETWEEN ", husb_age[1], " AND ", husb_age[2],
-      if (require_husb_working) " AND EMPSTAT = 1 " else " ",
-      ") ",
-      "SELECT ",
-      "  w.YEAR AS YEAR, w.SAMPLE AS SAMPLE, w.SERIAL AS SERIAL, w.STATEICP AS STATEICP,",
-      "  w.HHWT AS HHWT, w.PERWT AS female_perwt, h.PERWT AS male_perwt,",
-      "  w.PERNUM AS female_pernum, h.PERNUM AS male_pernum,",
-      "  w.AGE AS female_age, h.AGE AS male_age,",
-      "  w.RACE AS female_race, h.RACE AS male_race,",
-      "  w.EDUC AS female_educ, h.EDUC AS male_educ,",
-      "  w.EMPSTAT AS female_empstat, h.EMPSTAT AS male_empstat,",
-      "  w.UHRSWORK AS female_uhrswork, h.UHRSWORK AS male_uhrswork,",
-      "  w.WKSWORK1 AS female_wkswork1, h.WKSWORK1 AS male_wkswork1,",
-      "  w.INCWAGE AS female_incwage, h.INCWAGE AS male_incwage,",
-      "  w.INCTOT AS female_inctot, h.INCTOT AS male_inctot,",
-      "  w.NCHILD AS nchild ",
-      "FROM wife_cand w ",
-      "JOIN husb_cand h ",
-      "  ON w.YEAR = h.YEAR AND w.SAMPLE = h.SAMPLE AND w.SERIAL = h.SERIAL ",
-      " AND w.SPLOC = h.PERNUM AND h.SPLOC = w.PERNUM"
-    )
-    out[[i]] <- setDT(dbGetQuery(con, sql))
+
+    wives <- pull_person_side(yr, 2, wife_age)
+    husbs <- pull_person_side(yr, 1, husb_age,
+                              if (require_husb_working) " AND EMPSTAT = 1" else "")
+
+    # Prefix non-key columns so the two sides don't collide on merge.
+    setnames(wives, setdiff(names(wives), keys),
+             paste0("female_", tolower(setdiff(names(wives), keys))))
+    setnames(husbs, setdiff(names(husbs), keys),
+             paste0("male_", tolower(setdiff(names(husbs), keys))))
+
+    # Match within household, then keep only mutually-linked spouse pairs
+    # (BKP's marriage definition; same SPLOC rule as the shared pipeline).
+    cand <- merge(wives, husbs, by = keys, allow.cartesian = TRUE)
+    cand <- cand[female_sploc == male_pernum & male_sploc == female_pernum]
+
+    # One HHWT per household; both sides carry it, keep the wife's.
+    setnames(cand, "female_hhwt", "HHWT")
+    cand[, male_hhwt := NULL]
+    setnames(cand, "female_stateicp", "STATEICP")
+    cand[, male_stateicp := NULL]
+    cand[, nchild := female_nchild]
+    cand[, c("female_nchild", "male_nchild") := NULL]
+
+    out[[i]] <- cand
   }
   rbindlist(out, use.names = TRUE, fill = TRUE)
 }
