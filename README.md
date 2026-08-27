@@ -30,6 +30,12 @@ counties — evidence of bargaining, not just constraint?
 - `ipums-married-household-suite.R` → multi-measure income analysis on spouse pairs; *Section 12* adds household-level hours × political group descriptives (requires Section 7 output)
 - `ipums-county-female-lfpr-scatter.R`, `ipums-wage-quintile-time-graphs.R`, `ipums-spouse-income-scatter-plots.R` → additional IPUMS graphs
 
+**BKP (2015) replication (Bertrand, Kamenica & Pan, QJE — "Gender Identity and Relative Income within Households"):**
+- `ipums-bkp-pure-replication.R` → recreates BKP's actual sample/spec as closely as our data allows: Figure 1/2 (young-couple distribution, triangular-kernel recode of the exact-0.5 mass) and Table 2/3 (wife's LFP & income gap ~ `PrWifeEarnsMore`, a demographic-cell potential-income measure), extended through 2023. Queries `ipums_data.sqlite` directly — does **not** use the shared pair-builder above (different age/household-composition/county restrictions; see architecture note in `claude/bkp-replication-v2-changes.md`).
+- `ipums-bkp-augmented-tests.R` → second track: T1 income-share decomposition (labor/total/capital), T2 hourly-wage horse race, T3 political × frontier heterogeneity. Reuses the shared pair panel and the donut-RDD design from `ipums-rdd-breadwinner-norm.R`.
+- `ipums-bkp-replication-approximate.R` → earlier, approximate comparison (predates the corrected sample construction above); kept as-is, not on BKP's actual sample.
+- Internal decisions log and data-access gate: `claude/bkp-replication-v2-changes.md`, `claude/future-extensions.md`.
+
 **Regressions:**
 - `ipums-ols-regressions.R` → descriptive OLS: county-level (LFPR ~ income × vote_margin + FEs) and household-level (wife hours ~ income quintile × conservative + year FE + children)
 
