@@ -11,7 +11,23 @@ source("functions.R")
 # =========================================================
 # 0) Configuration
 # =========================================================
-years_keep <- c(1980, 1990, 2005:2023)
+# Years available in the rebuilt database (ipums_bkp.sqlite, IPUMS extract 4).
+# Previously c(1980, 1990, 2005:2023) — limited by the old extract. The new one
+# adds the 1970 and 2000 decennials plus ACS 2001-2004 and 2024.
+# NOTE ON 1970: the extract carries both 1970 questionnaire forms (Form 1 and
+# Form 2). They are drawn from different households so they do not overlap, but
+# the 1970 census split questions across the two long forms. Which form(s) we
+# keep is decided FROM THE DATA below (see samples_1970): we use whichever
+# report self-employment income (INCBUS/INCFARM), since that is part of the
+# labor-income measure. If both qualify they are pooled and weights halved.
+years_keep <- c(1970, 1980, 1990, 2000, 2001:2024)
+
+# Age/geography restrictions deliberately UNCHANGED from the original pipeline.
+# Every existing analysis (RDD, married-household suite, OLS, frontier merge)
+# is built on these, so altering them would silently shift published numbers.
+# Known caveat, unchanged: the county filter (COUNTYICP IS NOT NULL) keeps only
+# PUMAs where county is identified, which is a non-random subset biased toward
+# large counties. That is a separate decision from this data refresh.
 county_age_min <- 20
 county_age_max <- 64
 spouse_age_min <- 25
@@ -24,9 +40,12 @@ ensure_dir(panel_dir)
 ensure_dir(results_dir)
 ensure_dir(graphs_dir())
 
-sqlite_path <- data_path("interim", "ipums_data.sqlite")
+sqlite_path <- data_path("interim", "ipums_bkp.sqlite")
 if (!file.exists(sqlite_path)) {
-  stop("Missing SQLite file: ", sqlite_path)
+  stop("Missing SQLite file: ", sqlite_path, "\n",
+       "Build it with ipums-bkp-build-database.R (IPUMS extract 4). The legacy ",
+       "ipums_data.sqlite is superseded: it lacks self-employment income, ",
+       "HISPAN, the 2000 decennial, and 2024.")
 }
 
 # =========================================================
@@ -122,6 +141,59 @@ if (build_indexes) {
 }
 
 year_list_sql <- paste(years_keep, collapse = ",")
+
+# =========================================================
+# 2b) 1970 sample selection + labor-income helpers
+# =========================================================
+# Keep the 1970 form(s) that actually report self-employment income, rather
+# than assuming which one does. Mirrors detect_1970_samples() in
+# ipums-bkp-pure-replication.R so both pipelines treat 1970 identically.
+selfemp_coverage_floor <- 0.90
+
+samples_1970 <- local({
+  cov <- dbGetQuery(con, paste0(
+    "SELECT SAMPLE, COUNT(*) AS n, ",
+    "  SUM(CASE WHEN INCBUS  IS NOT NULL AND INCBUS  < 999999 THEN 1 ELSE 0 END) AS n_bus, ",
+    "  SUM(CASE WHEN INCFARM IS NOT NULL AND INCFARM < 999999 THEN 1 ELSE 0 END) AS n_farm ",
+    "FROM ipums_table WHERE YEAR = 1970 AND AGE >= 16 GROUP BY SAMPLE ORDER BY SAMPLE"
+  ))
+  if (nrow(cov) == 0) {
+    message("No 1970 records in database; 1970 will be absent from the panel.")
+    return(integer(0))
+  }
+  cov$bus_cov  <- cov$n_bus / cov$n
+  cov$farm_cov <- cov$n_farm / cov$n
+  message("1970 self-employment income coverage by sample:")
+  print(cov[, c("SAMPLE", "n", "bus_cov", "farm_cov")])
+  keep <- cov$SAMPLE[cov$bus_cov >= selfemp_coverage_floor &
+                     cov$farm_cov >= selfemp_coverage_floor]
+  message("  -> 1970 SAMPLE(s) kept: ",
+          if (length(keep)) paste(keep, collapse = ", ") else "NONE",
+          if (length(keep) > 1) "  [pooled; weights halved]" else "")
+  keep
+})
+
+# IPUMS income N/A sentinels are codes, not dollars — strip before arithmetic.
+# (Verified on the legacy extract: INCWAGE = 999999 appears only on under-16
+# records, which the age filters already exclude, but the guard belongs here.)
+na_sentinel <- function(x) {
+  ifelse(x %in% c(999999, 999998, 9999999, 9999998, -9999999), NA_real_, as.numeric(x))
+}
+
+# BKP's labor income = wage + self-employment. IPUMS reports self-employment as
+# INCBUS + INCFARM through 2000 and as INCBUS00 from 2000 on; prefer INCBUS00
+# where present so census and ACS eras share one definition.
+# Business/farm income can be legitimately NEGATIVE (losses), so sum first and
+# clamp the total at zero — clamping components would discard losses.
+labor_income_calc <- function(incwage, incbus, incfarm, incbus00) {
+  w  <- na_sentinel(incwage)
+  b0 <- na_sentinel(incbus00)
+  b  <- na_sentinel(incbus)
+  f  <- na_sentinel(incfarm)
+  self_emp <- ifelse(!is.na(b0), b0,
+                     rowSums(cbind(b, f), na.rm = TRUE))
+  pmax(rowSums(cbind(w, self_emp), na.rm = TRUE), 0)
+}
 
 # =========================================================
 # 3) County-year female/male LFPR and hours (PERWT)
@@ -314,7 +386,8 @@ for (yr in years_keep) {
   pair_sql <- paste0(
     "WITH base AS (",
     "  SELECT YEAR, SAMPLE, SERIAL, PERNUM, STATEICP, COUNTYICP, AGE, SEX, SPLOC, HHWT, HHINCOME,",
-    "         EMPSTAT, UHRSWORK, WKSWORK1, INCWAGE, INCTOT, INCSS, INCWELFR, NCHILD ",
+    "         EMPSTAT, UHRSWORK, WKSWORK1, INCWAGE, INCTOT, INCSS, INCWELFR, NCHILD,",
+    "         INCBUS, INCFARM, INCBUS00, RACE, HISPAN, EDUC, MARST ",
     "  FROM ipums_table ",
     "  WHERE YEAR = ", yr, " ",
     "    AND STATEICP IS NOT NULL ",
@@ -358,6 +431,20 @@ for (yr in years_keep) {
     "    MAX(CASE WHEN SEX = 1 THEN UHRSWORK END) AS male_uhrswork_raw,",
     "    MAX(CASE WHEN SEX = 2 THEN WKSWORK1 END) AS female_wkswork1_raw,",
     "    MAX(CASE WHEN SEX = 1 THEN WKSWORK1 END) AS male_wkswork1_raw,",
+    "    MAX(CASE WHEN SEX = 2 THEN INCBUS END) AS female_incbus,",
+    "    MAX(CASE WHEN SEX = 1 THEN INCBUS END) AS male_incbus,",
+    "    MAX(CASE WHEN SEX = 2 THEN INCFARM END) AS female_incfarm,",
+    "    MAX(CASE WHEN SEX = 1 THEN INCFARM END) AS male_incfarm,",
+    "    MAX(CASE WHEN SEX = 2 THEN INCBUS00 END) AS female_incbus00,",
+    "    MAX(CASE WHEN SEX = 1 THEN INCBUS00 END) AS male_incbus00,",
+    "    MAX(CASE WHEN SEX = 2 THEN RACE END) AS female_race,",
+    "    MAX(CASE WHEN SEX = 1 THEN RACE END) AS male_race,",
+    "    MAX(CASE WHEN SEX = 2 THEN HISPAN END) AS female_hispan,",
+    "    MAX(CASE WHEN SEX = 1 THEN HISPAN END) AS male_hispan,",
+    "    MAX(CASE WHEN SEX = 2 THEN EDUC END) AS female_educ,",
+    "    MAX(CASE WHEN SEX = 1 THEN EDUC END) AS male_educ,",
+    "    MAX(CASE WHEN SEX = 2 THEN AGE END) AS female_age,",
+    "    MAX(CASE WHEN SEX = 1 THEN AGE END) AS male_age,",
     "    MAX(CASE WHEN SEX = 2 THEN INCWAGE END) AS female_incwage,",
     "    MAX(CASE WHEN SEX = 1 THEN INCWAGE END) AS male_incwage,",
     "    MAX(CASE WHEN SEX = 2 THEN INCTOT END) AS female_inctot,",
@@ -384,6 +471,10 @@ for (yr in years_keep) {
     "  female_pernum, male_pernum, female_empstat, male_empstat,",
     "  female_uhrswork_raw, male_uhrswork_raw, female_wkswork1_raw, male_wkswork1_raw,",
     "  female_incwage, male_incwage, female_inctot, male_inctot,",
+    "  female_incbus, male_incbus, female_incfarm, male_incfarm,",
+    "  female_incbus00, male_incbus00,",
+    "  female_race, male_race, female_hispan, male_hispan,",
+    "  female_educ, male_educ, female_age, male_age,",
     "  female_incss, male_incss, female_incwelfr, male_incwelfr, hh_transfer_income, nchild ",
     "FROM pairs"
   )
@@ -401,6 +492,20 @@ for (yr in years_keep) {
       male_income_total_nonneg = pmax(male_inctot, 0, na.rm = FALSE),
       female_income_wage_nonneg = pmax(female_incwage, 0, na.rm = FALSE),
       male_income_wage_nonneg = pmax(male_incwage, 0, na.rm = FALSE),
+      # NEW: BKP's labor-income concept (wage + self-employment). Added
+      # alongside the wage-only columns rather than replacing them, so every
+      # existing analysis keeps reproducing identically while new work can use
+      # the correct measure. See labor_income_calc() for era-splicing and the
+      # negative-income (business loss) handling.
+      female_income_labor = labor_income_calc(female_incwage, female_incbus,
+                                              female_incfarm, female_incbus00),
+      male_income_labor = labor_income_calc(male_incwage, male_incbus,
+                                            male_incfarm, male_incbus00),
+      couple_income_labor = female_income_labor + male_income_labor,
+      female_share_labor = ifelse(
+        female_income_labor > 0 & male_income_labor > 0,
+        female_income_labor / couple_income_labor, NA_real_
+      ),
       female_transfer_income_nonneg = pmax(female_incss, 0, na.rm = FALSE) + pmax(female_incwelfr, 0, na.rm = FALSE),
       male_transfer_income_nonneg = pmax(male_incss, 0, na.rm = FALSE) + pmax(male_incwelfr, 0, na.rm = FALSE),
       household_transfer_income_nonneg = pmax(hh_transfer_income, 0, na.rm = FALSE),

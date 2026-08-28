@@ -13,42 +13,46 @@ source("R/paths.R")
 #
 # Corrects ipums-bkp-replication-approximate.R against BKP's actual sample
 # construction, verified directly against the NBER working paper (w19023) text.
-# Queries data/interim/ipums_data.sqlite directly (does NOT use the shared
+# Queries data/interim/ipums_bkp.sqlite directly (built by
+# ipums-bkp-build-database.R). Deliberately does NOT use the shared
 # ipums_married_oppositesex_spouse_pairs_with_kids.csv pair-builder in
-# ipums-county-household-analysis.R, which has different restrictions used by
-# many other scripts — see project plan for the rationale).
+# ipums-county-household-analysis.R, whose age/household/county restrictions
+# differ from BKP's and are relied on by many other scripts.
 #
 # Sample construction, matched to BKP Section 3.1 and Section 5:
-#   - Figure 1: ACS 2008-2010 (BKP's "3-year aggregate"; here approximated by
-#     stacking the three 1-year ACS files — see caveat below), young couples:
-#     wife 22-31, husband 24-33, both labor income (INCWAGE) > 0 (interior).
-#   - Figure 2: same young-couple restriction, one Census/ACS year per decade
-#     (1970, 1980, 1990; 2000 decennial unavailable, ACS 2001 used as a labeled
-#     proxy) — BKP's Section 3.1 introduces Figure 2 directly after Figure 1
-#     with no separate restriction stated, so we carry the same sample.
-#   - Table 2/3: both spouses 18-65, husband employed, BKP-era years
-#     (1970, 1980, 1990, 2001-proxy, 2008-2010) plus a 2011-2023 extension.
+#   - Figure 1: ACS 2008-2010, young couples (wife 22-31, husband 24-33), both
+#     spouses with labor income > 0 (interior).
+#   - Figure 2: same young-couple restriction, one decennial per decade
+#     (1970, 1980, 1990, 2000) — BKP's Section 3.1 introduces Figure 2 directly
+#     after Figure 1 with no separate restriction stated, so we carry the same
+#     sample forward.
+#   - Table 2/3: both spouses 18-65, husband employed; BKP-era years
+#     (1970, 1980, 1990, 2000, 2008-2010) plus a 2011-2024 extension.
+#   - Income = LABOR income (wage + self-employment), matching BKP. See the
+#     labor_income() helper for the era-splicing and the N/A-code handling.
+#   - Race = BKP's three marriage-market groups (white / Black / Hispanic,
+#     other races dropped), via RACE + HISPAN.
 #   - No county filter (BKP doesn't use one; the shared pipeline's COUNTYICP
 #     filter silently drops most PUMAs). Household composition: only requires
 #     a mutually-linked opposite-sex spouse pair via SPLOC — extra household
 #     members (parents, adult children) are NOT excluded, unlike the shared
 #     pipeline's "exactly two adults 25+" filter.
 #
-# KNOWN DATA GAPS (flagged inline where they bind; see plan /
+# REMAINING DEVIATIONS FROM BKP (deliberate; see
 # claude/bkp-replication-v2-changes.md):
-#   1) "Labor income" = INCWAGE only here. BKP's labor income includes
-#      self-employment (INCBUS00/INCFARM); those columns aren't in our current
-#      IPUMS extract (only their quality flags are). Swap-in point is marked
-#      INCOME_MEASURE_SWAP below — becomes a one-line change once a new extract
-#      with INCBUS00/INCFARM lands.
-#   2) "ACS 2008-2010 3-year aggregate" is approximated by stacking three
-#      1-year ACS files (2008, 2009, 2010), not the Census Bureau's pooled
-#      3-year microdata product (different weighting).
-#   3) 2000 decennial sample isn't in our extract; ACS 2001 is used as the
-#      nearest available proxy in Figure 2 and the Table 2/3 BKP-era panel.
-#   4) Race buckets use RACE only (White/Black/Other) — no HISPAN variable in
-#      our extract, so BKP's white/Black/Hispanic three-way split isn't exactly
-#      reproduced.
+#   1) BKP's Figure 1 used the ACS 2008-2010 3-year aggregate. We stack the
+#      three 1-year files instead. The 3-year product contains the same
+#      respondents, so including both would double-count; BKP's use of it
+#      reflected the data vintage available to them in 2013, not a property
+#      that needs reproducing. Weighting differs slightly as a result.
+#   2) 1970 carries two non-overlapping questionnaire forms. Which one(s) we
+#      use is decided FROM THE DATA: detect_1970_samples() keeps the form(s)
+#      that actually report self-employment income (INCBUS/INCFARM), since the
+#      1970 census split questions across its two long forms and that income is
+#      part of BKP's labor-income concept. If both qualify they are pooled to
+#      ~2% and weights are halved.
+#   3) Extended through 2024, past BKP's 2011 endpoint, to test whether the
+#      0.5 cliff has changed in the decade since publication.
 #
 # Scope: distribution (Figure 1/2) + labor supply (Table 2/3) only. Table 1
 # (Bartik-IV marriage-formation regression) and Tables 4-6 (NSFH marital
@@ -61,8 +65,11 @@ panel_dir   <- data_path("processed", "panel")
 ensure_dir(results_dir)
 ensure_dir(panel_dir)
 
-sqlite_path <- data_path("interim", "ipums_data.sqlite")
-if (!file.exists(sqlite_path)) stop("Missing SQLite file: ", sqlite_path)
+sqlite_path <- data_path("interim", "ipums_bkp.sqlite")
+if (!file.exists(sqlite_path)) {
+  stop("Missing SQLite file: ", sqlite_path, "\n",
+       "Build it first with ipums-bkp-build-database.R (downloads IPUMS extract 4).")
+}
 
 con <- dbConnect(SQLite(), sqlite_path)
 on.exit(dbDisconnect(con), add = TRUE)
@@ -82,13 +89,85 @@ young_wife_age  <- c(22, 31)
 young_husb_age  <- c(24, 33)
 adult_age       <- c(18, 65)
 
-bkp_era_young_years <- c(2008L, 2009L, 2010L)              # Figure 1
-bkp_era_decade_years <- c(1970L, 1980L, 1990L, 2001L)       # Figure 2 (2001 = 2000 proxy)
-bkp_era_table_years  <- c(1970L, 1980L, 1990L, 2001L, 2008L, 2009L, 2010L) # Table 2/3
-extension_young_years <- c(2021L, 2022L, 2023L)             # 10-years-on Figure 1
-extension_table_years <- 2011L:2023L                        # 10-years-on Table 2/3
+bkp_era_young_years   <- c(2008L, 2009L, 2010L)                    # Figure 1
+bkp_era_decade_years  <- c(1970L, 1980L, 1990L, 2000L)             # Figure 2 (real 2000 decennial)
+bkp_era_table_years   <- c(1970L, 1980L, 1990L, 2000L, 2008L, 2009L, 2010L)  # Table 2/3
+extension_young_years <- c(2022L, 2023L, 2024L)                    # 10-years-on Figure 1
+extension_table_years <- 2011L:2024L                               # 10-years-on Table 2/3
 
 min_cell_n <- 30L   # minimum weighted-N to trust a demographic-cell wage percentile
+
+# ── Sequential range scans instead of index seeks ──────────────────────────
+# PERFORMANCE, measured — this is the difference between minutes and hours.
+#
+# Finding rows via idx_ipums_age_sex is instant, but FETCHING 20+ columns for
+# millions of matches means millions of random page reads into a 14.9GB file.
+# For the 2000 decennial (4.4M matching women) that measured 5m09s at 1% CPU —
+# pure I/O wait — and the pipeline does this ~40 times.
+#
+# The data was inserted in file order, so each YEAR occupies a CONTIGUOUS
+# rowid range (verified: all 28 years contiguous). Scanning that range reads
+# sequentially instead of seeking randomly: the same 2000 fetch takes 1.06s at
+# 99% CPU. Roughly a 290x speedup.
+#
+# NOT INDEXED stops the planner reverting to the age index (it prefers the
+# index seek, which is the slow path here). The YEAR = ? predicate is kept as
+# a correctness guard so results stay right even if contiguity ever breaks.
+year_rowid_ranges <- setDT(dbGetQuery(
+  con, "SELECT YEAR, MIN(rowid) AS lo, MAX(rowid) AS hi, COUNT(*) AS n
+        FROM ipums_table GROUP BY YEAR"
+))
+if (nrow(year_rowid_ranges[(hi - lo + 1) != n]) > 0) {
+  warning("Some YEARs are not contiguous in rowid order; range scans will be ",
+          "less selective but remain correct (the YEAR predicate still applies).")
+}
+setkey(year_rowid_ranges, YEAR)
+
+year_rowid_clause <- function(yr) {
+  r <- year_rowid_ranges[J(as.integer(yr))]
+  if (nrow(r) == 0L || is.na(r$lo)) stop("Year not present in database: ", yr)
+  paste0(" rowid BETWEEN ", r$lo, " AND ", r$hi, " AND YEAR = ", yr)
+}
+
+# ── 1970 sample selection: driven by the data, not hard-coded ──────────────
+# The extract contains both 1970 questionnaire forms (Form 1 = SAMPLE 197001,
+# Form 2 = 197002). They are drawn from different households, so they do not
+# overlap. But the 1970 census split questions across the two long forms, and
+# self-employment income (INCBUS/INCFARM) is part of BKP's labor-income
+# concept — so we use whichever form(s) actually carry it, determined by
+# querying coverage rather than assuming.
+#
+# If both forms qualify, they are pooled and weights halved: each form's
+# weights are calibrated so that its own 1% sample sums to the US population,
+# so pooling without adjustment would imply 2x the true population. (Shares and
+# weighted means are unaffected — the factor cancels — but weighted counts are.)
+selfemp_coverage_floor <- 0.90   # share of adult records with a usable value
+
+detect_1970_samples <- function() {
+  cov <- setDT(dbGetQuery(con, paste0(
+    "SELECT SAMPLE, COUNT(*) AS n, ",
+    "  SUM(CASE WHEN INCBUS  IS NOT NULL AND INCBUS  < 999999 THEN 1 ELSE 0 END) AS n_bus, ",
+    "  SUM(CASE WHEN INCFARM IS NOT NULL AND INCFARM < 999999 THEN 1 ELSE 0 END) AS n_farm ",
+    "FROM ipums_table WHERE YEAR = 1970 AND AGE >= 16 GROUP BY SAMPLE ORDER BY SAMPLE"
+  )))
+  if (nrow(cov) == 0) stop("No 1970 records found in ", sqlite_path)
+  cov[, `:=`(bus_cov = n_bus / n, farm_cov = n_farm / n)]
+  message("1970 self-employment income coverage by sample:")
+  print(cov[, .(SAMPLE, n, bus_cov = round(bus_cov, 3), farm_cov = round(farm_cov, 3))])
+
+  keep <- cov[bus_cov >= selfemp_coverage_floor & farm_cov >= selfemp_coverage_floor, SAMPLE]
+  if (length(keep) == 0) {
+    stop("No 1970 sample carries INCBUS/INCFARM at >= ",
+         selfemp_coverage_floor * 100, "% coverage. Inspect the table above: ",
+         "1970 may need to be dropped, or the labor-income concept relaxed to ",
+         "wage-only for that year (which would make 1970 non-comparable to the ",
+         "other decades).")
+  }
+  message("  -> using 1970 SAMPLE(s): ", paste(keep, collapse = ", "),
+          if (length(keep) > 1) "  [pooled; weights halved]" else "  [single form]")
+  keep
+}
+samples_1970 <- detect_1970_samples()
 
 # lm() + vcovCL on the full multi-million-row, multi-year pooled sample (with
 # ~90 dummy/continuous RHS columns) is impractically slow/memory-heavy. Fit the
@@ -98,10 +177,37 @@ min_cell_n <- 30L   # minimum weighted-N to trust a demographic-cell wage percen
 max_reg_n <- 250000L
 set.seed(42)
 
-# INCOME_MEASURE_SWAP: change this single line once INCBUS00 (+ INCFARM
-# pre-2000) exist in ipums_data.sqlite, to move from wage-only to BKP's true
-# "labor income" (wage + self-employment).
-labor_income_expr <- "INCWAGE"
+# ── Labor income (BKP's income concept) ───────────────────────────────────
+# BKP define individual income as LABOR income: wages/salary plus
+# self-employment. IPUMS splits self-employment across variables and eras:
+#   INCBUS + INCFARM  -> 1950-2000 (business and farm reported separately)
+#   INCBUS00          -> 2000 onward (business and farm combined)
+# 2000 carries both; we prefer INCBUS00 where present so the ACS era and the
+# 2000 census use the same definition.
+#
+# Two data hazards handled here:
+#  1) IPUMS N/A sentinels. Income variables use 9999999/999999/999998-style
+#     codes for "not in universe" / missing, NOT real dollars. Verified on the
+#     old extract: INCWAGE = 999999 occurs for every under-16 record and none
+#     at 16+, so the adult age restrictions already excluded them — but the
+#     guard belongs in code, not in an age filter that might later change.
+#  2) INCBUS/INCFARM can be legitimately NEGATIVE (business/farm losses).
+#     So we must not clamp the components at zero individually; we sum first,
+#     then clamp the total at zero (someone whose only income is a $5k loss
+#     has zero labor income, not negative).
+na_sentinel <- function(x) {
+  # IPUMS income N/A / missing codes are large repunit-style values.
+  fifelse(x %in% c(999999, 999998, 9999999, 9999998, -9999999), NA_real_, as.numeric(x))
+}
+
+labor_income <- function(incwage, incbus, incfarm, incbus00) {
+  w  <- na_sentinel(incwage)
+  b0 <- na_sentinel(incbus00)
+  b  <- na_sentinel(incbus)
+  f  <- na_sentinel(incfarm)
+  self_emp <- fifelse(!is.na(b0), b0, rowSums(cbind(b, f), na.rm = TRUE))
+  pmax(rowSums(cbind(w, self_emp), na.rm = TRUE), 0)
+}
 
 # ── 1) Helpers ────────────────────────────────────────────────────────────
 
@@ -130,13 +236,17 @@ bucket_educ5 <- function(educ) {
   )
 }
 
-bucket_race3 <- function(race) {
-  # No HISPAN variable in our extract -> White/Black/Other only (caveat #4 above).
+bucket_race3 <- function(race, hispan) {
+  # BKP's three marriage-market race groups: (non-Hispanic) white,
+  # (non-Hispanic) Black, and Hispanic. BKP: "We drop individuals of other
+  # races." Hispanic origin takes precedence over RACE, matching their
+  # construction. HISPAN: 0 = not Hispanic, 1-4 = Hispanic, 9 = missing.
   fcase(
-    is.na(race), NA_character_,
-    race == 1,    "White",
-    race == 2,    "Black",
-    default =    "Other"
+    is.na(race) | is.na(hispan),        NA_character_,
+    hispan %in% 1:4,                    "Hispanic",
+    hispan == 0 & race == 1,            "White",
+    hispan == 0 & race == 2,            "Black",
+    default =                           NA_character_   # other races dropped, per BKP
   )
 }
 
@@ -199,13 +309,25 @@ cluster_se <- function(model, cluster_var) {
 # then match in-memory with data.table. Building a join-key index on a 42GB
 # table is the other fix, but costs disk we don't have.
 pull_person_side <- function(yr, sex, age_range, extra_where = "") {
+  # SPLOC > 0 pre-filters to spouse-linked people before the column fetch —
+  # lossless here, since only mutually-linked spouses can form a pair.
   sql <- paste0(
-    "SELECT YEAR, SAMPLE, SERIAL, PERNUM, STATEICP, AGE, SEX, SPLOC, RACE, EDUC, ",
-    "EMPSTAT, UHRSWORK, WKSWORK1, INCWAGE, INCTOT, HHWT, PERWT, NCHILD ",
-    "FROM ipums_table WHERE YEAR = ", yr, " AND SEX = ", sex,
+    "SELECT YEAR, SAMPLE, SERIAL, PERNUM, STATEICP, AGE, SEX, SPLOC, RACE, HISPAN, EDUC, ",
+    "EMPSTAT, UHRSWORK, WKSWORK1, INCWAGE, INCBUS, INCFARM, INCBUS00, INCTOT, ",
+    "HHWT, PERWT, NCHILD ",
+    "FROM ipums_table NOT INDEXED WHERE", year_rowid_clause(yr),
+    " AND SEX = ", sex, " AND SPLOC > 0",
     " AND AGE BETWEEN ", age_range[1], " AND ", age_range[2], extra_where
   )
-  setDT(dbGetQuery(con, sql))
+  dt <- setDT(dbGetQuery(con, sql))
+
+  # 1970: keep only the form(s) that actually carry INCBUS/INCFARM (determined
+  # by detect_1970_samples() above), and halve weights if both are pooled.
+  if (yr == 1970L) {
+    dt <- dt[SAMPLE %in% samples_1970]
+    if (length(samples_1970) > 1) dt[, `:=`(HHWT = HHWT / 2, PERWT = PERWT / 2)]
+  }
+  dt
 }
 
 build_bkp_pairs <- function(years, wife_age = c(18, 65), husb_age = c(18, 65),
@@ -251,10 +373,8 @@ message("Building Figure 1 sample (young couples, ACS 2008-2010) ...")
 pairs_young_fig1 <- build_bkp_pairs(bkp_era_young_years, young_wife_age, young_husb_age)
 message("  N pairs (pre income filter): ", nrow(pairs_young_fig1))
 
-# INCOME_MEASURE_SWAP point: female/male_incwage stand in for labor_income_expr
-# until INCBUS00 (+ INCFARM pre-2000) are available in ipums_data.sqlite.
-pairs_young_fig1[, female_labor_income := female_incwage]
-pairs_young_fig1[, male_labor_income   := male_incwage]
+pairs_young_fig1[, female_labor_income := labor_income(female_incwage, female_incbus, female_incfarm, female_incbus00)]
+pairs_young_fig1[, male_labor_income   := labor_income(male_incwage, male_incbus, male_incfarm, male_incbus00)]
 
 fig1_interior <- pairs_young_fig1[female_labor_income > 0 & male_labor_income > 0]
 fig1_interior[, z := female_labor_income / (female_labor_income + male_labor_income)]
@@ -278,8 +398,8 @@ p_fig1 <- ggplot(fig1_density, aes(x = bin_mid, y = share)) +
       ", husband ", young_husb_age[1], "-", young_husb_age[2],
       "), ACS 2008-2010 stacked (proxy for BKP's 3-yr aggregate), ",
       "interior sample, triangular-kernel 0.5-mass recode, 20 bins.\n",
-      "Income concept: ", labor_income_expr, " only (BKP = wage + self-employment; ",
-      "see INCOME_MEASURE_SWAP note in script header)."
+      "Income concept: labor income = wage + self-employment, matching BKP ",
+      "(INCWAGE + INCBUS/INCFARM pre-2000, + INCBUS00 from 2000)."
     ),
     x = "Wife's share of couple labor income", y = "Fraction"
   ) +
@@ -291,23 +411,38 @@ save_plot("bkp_pure_figure1_young_couples_density.png", { print(p_fig1) }, width
 # ACS 2008-2010 (this is the 18-65 sample, not the young-couples sample above).
 message("Building 18-65 sanity-check sample (ACS 2008-2010) ...")
 pairs_1865_acs0810 <- build_bkp_pairs(bkp_era_young_years, adult_age, adult_age)
-pairs_1865_acs0810[, female_labor_income := female_incwage]
-pairs_1865_acs0810[, male_labor_income   := male_incwage]
+pairs_1865_acs0810[, female_labor_income := labor_income(female_incwage, female_incbus, female_incfarm, female_incbus00)]
+pairs_1865_acs0810[, male_labor_income   := labor_income(male_incwage, male_incbus, male_incfarm, male_incbus00)]
+# IMPORTANT — match BKP's population exactly. BKP (Section 3.2) say the wife
+# earns more in 26% of "the couples where both individuals are between 18 and
+# 65 years old". That is an AGE restriction only; it does NOT require both to
+# have positive income. Comparing 26% against the interior (both-earning)
+# sample is the wrong comparison: the interior filter drops male-only-earner
+# couples — ~21% of couples, every one a case where the husband out-earns —
+# which mechanically inflates the wife-earns-more share by ~3pp.
+# Measured here: 25.6% on BKP's population vs 28.4% interior-only.
+sanity_all <- pairs_1865_acs0810   # BKP's stated population: age restriction only
+sanity_wife_more_all <- weighted.mean(
+  sanity_all$female_labor_income > sanity_all$male_labor_income,
+  sanity_all$HHWT
+)
 sanity_interior <- pairs_1865_acs0810[female_labor_income > 0 & male_labor_income > 0]
-sanity_wife_more <- weighted.mean(
+sanity_wife_more_int <- weighted.mean(
   sanity_interior$female_labor_income > sanity_interior$male_labor_income,
   sanity_interior$HHWT
 )
-message("  SANITY CHECK vs. BKP's reported 26%: wife earns more in ",
-        round(sanity_wife_more * 100, 1), "% of 18-65 ACS 2008-2010 couples ",
-        "(both labor income > 0).")
+message("  SANITY CHECK vs. BKP's reported 26% (all couples 18-65, BKP's ",
+        "stated restriction): ", round(sanity_wife_more_all * 100, 1), "%")
+message("  For reference, interior only (both labor income > 0): ",
+        round(sanity_wife_more_int * 100, 1),
+        "% — NOT the figure BKP's 26% refers to.")
 
 # ── 4) Figure 2: distribution by decade, young-couple restriction ─────────
 
 message("Building Figure 2 sample (young couples, by decade) ...")
 pairs_young_fig2 <- build_bkp_pairs(bkp_era_decade_years, young_wife_age, young_husb_age)
-pairs_young_fig2[, female_labor_income := female_incwage]
-pairs_young_fig2[, male_labor_income   := male_incwage]
+pairs_young_fig2[, female_labor_income := labor_income(female_incwage, female_incbus, female_incfarm, female_incbus00)]
+pairs_young_fig2[, male_labor_income   := labor_income(male_incwage, male_incbus, male_incfarm, male_incbus00)]
 fig2_interior <- pairs_young_fig2[female_labor_income > 0 & male_labor_income > 0]
 fig2_interior[, z := female_labor_income / (female_labor_income + male_labor_income)]
 fig2_interior[, decade_label := fcase(
@@ -344,18 +479,30 @@ build_potential_income_lookup <- function(years, min_n = min_cell_n) {
   for (i in seq_along(years)) {
     yr <- years[i]
     sql <- paste0(
-      "SELECT AGE, EDUC, RACE, STATEICP, INCWAGE, PERWT FROM ipums_table ",
-      "WHERE YEAR = ", yr, " AND SEX = 2 AND AGE BETWEEN 18 AND 65 ",
-      "  AND EMPSTAT = 1 AND INCWAGE > 0"
+      "SELECT AGE, EDUC, RACE, HISPAN, STATEICP, SAMPLE, ",
+      "INCWAGE, INCBUS, INCFARM, INCBUS00, PERWT ",
+      "FROM ipums_table NOT INDEXED WHERE", year_rowid_clause(yr),
+      "  AND SEX = 2 AND AGE BETWEEN 18 AND 65 AND EMPSTAT = 1",
+      # Match pull_person_side(): same 1970 form(s), so the potential-income
+      # distribution is estimated on the same sample as the couples it is
+      # merged onto.
+      if (yr == 1970L) paste0(" AND SAMPLE IN (", paste(samples_1970, collapse = ","), ")") else ""
     )
     dt <- setDT(dbGetQuery(con, sql))
     dt[, YEAR := yr]
+    # Weight halving when both 1970 forms are pooled (see detect_1970_samples).
+    if (yr == 1970L && length(samples_1970) > 1) dt[, PERWT := PERWT / 2]
     out[[i]] <- dt
   }
   women <- rbindlist(out, use.names = TRUE)
+  # Potential earnings are drawn from the distribution of LABOR income among
+  # working women (BKP's concept), not wage income alone — so the imputation
+  # and the running variable use the same definition.
+  women[, lab_inc := labor_income(INCWAGE, INCBUS, INCFARM, INCBUS00)]
+  women <- women[lab_inc > 0]
   women[, age5  := age_bin5(AGE)]
   women[, educ5 := bucket_educ5(EDUC)]
-  women[, race3 := bucket_race3(RACE)]
+  women[, race3 := bucket_race3(RACE, HISPAN)]
   women <- women[!is.na(age5) & !is.na(educ5) & !is.na(race3)]
 
   probs <- seq(0.05, 0.95, by = 0.05)  # 19 vigintile-ish points, per BKP Section 5
@@ -365,7 +512,7 @@ build_potential_income_lookup <- function(years, min_n = min_cell_n) {
     if (n_wt < min_n) {
       as.list(setNames(rep(NA_real_, length(probs)), paste0("potential_p", seq_along(probs))))
     } else {
-      as.list(setNames(weighted_quantile(INCWAGE, PERWT, probs), paste0("potential_p", seq_along(probs))))
+      as.list(setNames(weighted_quantile(lab_inc, PERWT, probs), paste0("potential_p", seq_along(probs))))
     }
   }, by = .(YEAR, STATEICP, age5, educ5, race3)]
 
@@ -377,14 +524,14 @@ build_potential_income_lookup <- function(years, min_n = min_cell_n) {
 run_table2_table3 <- function(years, era_label) {
   message("Building Table 2/3 sample (", era_label, ") ...")
   pairs <- build_bkp_pairs(years, adult_age, adult_age, require_husb_working = TRUE)
-  pairs[, female_labor_income := female_incwage]
-  pairs[, male_labor_income   := male_incwage]
+  pairs[, female_labor_income := labor_income(female_incwage, female_incbus, female_incfarm, female_incbus00)]
+  pairs[, male_labor_income   := labor_income(male_incwage, male_incbus, male_incfarm, male_incbus00)]
   pairs[, age5  := age_bin5(female_age)]
   pairs[, educ5 := bucket_educ5(female_educ)]
-  pairs[, race3 := bucket_race3(female_race)]
+  pairs[, race3 := bucket_race3(female_race, female_hispan)]
   pairs[, husb_age5  := age_bin5(male_age)]
   pairs[, husb_educ5 := bucket_educ5(male_educ)]
-  pairs[, husb_race3 := bucket_race3(male_race)]
+  pairs[, husb_race3 := bucket_race3(male_race, male_hispan)]
   pairs <- pairs[!is.na(age5) & !is.na(educ5) & !is.na(race3) &
                  !is.na(husb_age5) & !is.na(husb_educ5) & !is.na(husb_race3)]
 
@@ -478,8 +625,8 @@ table23_bkp_era <- run_table2_table3(bkp_era_table_years, "BKP era (1970-2010)")
 
 message("Building 10-years-on Figure 1 analog (young couples, ACS 2021-2023) ...")
 pairs_young_ext <- build_bkp_pairs(extension_young_years, young_wife_age, young_husb_age)
-pairs_young_ext[, female_labor_income := female_incwage]
-pairs_young_ext[, male_labor_income   := male_incwage]
+pairs_young_ext[, female_labor_income := labor_income(female_incwage, female_incbus, female_incfarm, female_incbus00)]
+pairs_young_ext[, male_labor_income   := labor_income(male_incwage, male_incbus, male_incfarm, male_incbus00)]
 ext_interior <- pairs_young_ext[female_labor_income > 0 & male_labor_income > 0]
 ext_interior[, z := female_labor_income / (female_labor_income + male_labor_income)]
 ext_density <- recode_half_mass_triangular(ext_interior, "z", "HHWT", n_bins = 20L)

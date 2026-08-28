@@ -4,31 +4,40 @@ Deferred items and the data-access gate for the BKP replication update. See
 `claude/bkp-replication-v2-changes.md` for the decisions already implemented
 in `ipums-bkp-pure-replication.R` and `ipums-bkp-augmented-tests.R`.
 
-## Gate: new IPUMS extract needed
+## Gate: new IPUMS extract — RESOLVED (2026-08-27)
 
-Blocking dependency the user must action (no IPUMS API key is configured in
-this repo, and extract submission needs the account/website) — see plan file
-for the full checklist. Submit a new IPUMS USA extract adding:
+Submitted as IPUMS USA extract **#4** via the API (key stored in the gitignored
+`.Renviron`). 29 samples, 39 variables, no overlapping samples. Built by
+`ipums-bkp-build-database.R` into `data/interim/ipums_bkp.sqlite` — a NEW file,
+leaving the old 42GB `ipums_data.sqlite` intact until the replacement is
+validated.
 
-- **Variables:** `INCBUS00`, `INCFARM`, `INCRETIR`, `MARST` (only the quality
-  flags for the first two — `QINCBUS`, `QINCFARM` — exist in the current
-  extract; the value columns don't).
-- **Samples:** 2000 decennial (1%); the official ACS 2008-2010 3-year
-  aggregate product, if still available as a distinct IPUMS sample (else the
-  1-year-stack proxy stays in place).
+All four blocking items are resolved: labor income (`INCBUS`/`INCFARM`/
+`INCBUS00`), `HISPAN` for BKP's race split, the real 2000 decennial, and
+`MARST`/`INCRETIR`. Coverage additionally extends to 2024. The code changes
+described here have been applied — see `claude/bkp-replication-v2-changes.md`
+for the resulting decisions.
 
-Once it lands (`data/interim/ipums_data.sqlite` rebuilt from the new extract
-via `ipmus-data-cleaning.R`):
-- Flip `labor_income_expr` / the `INCOME_MEASURE_SWAP` point in
-  `ipums-bkp-pure-replication.R` from `INCWAGE` to
-  `INCWAGE + INCBUS00 (+ INCFARM pre-2000)` — one-line change, structure
-  already in place.
-- Replace the ACS-2001-as-2000-proxy years in `bkp_era_decade_years` /
-  `bkp_era_table_years` with the real 2000 decennial.
-- Replace the 1-year-stack Figure 1 sample with the true 3-year aggregate
-  sample if IPUMS still offers it.
-- Re-derive `race3` bucketing to add a Hispanic category once `HISPAN` is
-  pulled (currently White/Black/Other only).
+Two things deliberately NOT done, with reasons:
+- **The ACS 2008-2010 3-year sample was excluded**, though it is still offered
+  (`us2010c`). It contains the same respondents as the 2008/2009/2010 1-year
+  files, so including both would double-count.
+- **Extracts #2 and #3 were superseded** before download (#2 contained the
+  overlapping 3-year sample; #3 lacked `YNGCH`/`GQ`, which
+  `ipums-county-household-analysis.R` needs, so it could not have replaced the
+  old database). The IPUMS API has no delete endpoint; they expire unused.
+
+### Follow-up: retiring the old database
+
+`ipums_bkp.sqlite` is a complete superset of what the pipeline reads, so the
+old `ipums_data.sqlite` (~39GB) and its source `usa_00001.dat.gz` (~5.8GB) can
+be deleted — but only after:
+1. The new database validates (row counts by year, income variables populated).
+2. `ipums-county-household-analysis.R` is re-run against the new database to
+   regenerate the shared pair panels, since the RDD/suite/augmented scripts
+   read those CSVs rather than the database directly. This also propagates the
+   corrected labor-income measure through the rest of the project.
+3. Those regenerated panels are spot-checked against the current ones.
 
 ## Deferred BKP tables (out of scope for the current replication)
 

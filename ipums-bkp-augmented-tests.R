@@ -56,7 +56,15 @@ panel_dir   <- data_path("processed", "panel")
 results_dir <- data_path("processed", "results")
 ensure_dir(results_dir)
 
-sqlite_path <- data_path("interim", "ipums_data.sqlite")
+sqlite_path <- data_path("interim", "ipums_bkp.sqlite")
+# NOTE ON MIXED VINTAGE: T1/T2 read the shared pair panel CSV, which was built
+# from the OLD extract by ipums-county-household-analysis.R, while the capital-
+# income columns below come from the NEW database. These are compatible —
+# (YEAR, SERIAL, PERNUM) are IPUMS sample identifiers and both extracts draw
+# the same 1-year ACS samples across the panel's years — but the pairing is
+# temporary. Once ipums-county-household-analysis.R is re-run against the new
+# database (see claude/future-extensions.md), the panel and this pull share one
+# vintage and the whole project inherits the corrected labor-income measure.
 
 below_above_ratio <- function(dt, z_col, wt_col, donut_w = donut_primary) {
   dt[, zb := round(get(z_col) * 100) / 100]
@@ -103,47 +111,51 @@ dt[, z_total := fifelse(
   NA_real_
 )]
 
-# (c) capital/non-labor income share — needs INCINVST/INCOTHER, not in the
-# shared panel file. Lightweight supplementary pull (no self-join, so much
-# cheaper than rebuilding the pair file), merged on person keys already
-# present in the panel (female_pernum/male_pernum).
-message("  Pulling supplementary capital-income (INCINVST+INCOTHER) by person ...")
+# (c) capital/non-labor income share — needs INCINVST/INCOTHER, which aren't in
+# the shared panel file, so they come from a supplementary DB pull.
+#
+# MEMORY NOTE: process one year at a time and reduce immediately. Pulling all
+# years at once means ~83M person-rows in memory merged twice against an 11.6M
+# -row panel (~5GB peak) — enough to swap-thrash this machine. Per year, we
+# keep only (YEAR, HHWT, z_capital), which is small.
+message("  Pulling supplementary capital-income (INCINVST+INCOTHER) year by year ...")
 con <- dbConnect(SQLite(), sqlite_path)
 years_needed <- sort(unique(dt$YEAR))
-capital_income <- rbindlist(lapply(years_needed, function(yr) {
-  sql <- paste0(
-    "SELECT YEAR, SAMPLE, SERIAL, PERNUM, ",
-    "  COALESCE(INCINVST,0) + COALESCE(INCOTHER,0) AS capital_income ",
+
+z_capital_list <- lapply(years_needed, function(yr) {
+  cap <- setDT(dbGetQuery(con, paste0(
+    "SELECT SERIAL, PERNUM, ",
+    "  MAX(COALESCE(INCINVST,0),0) + MAX(COALESCE(INCOTHER,0),0) AS cap_inc ",
     "FROM ipums_table WHERE YEAR = ", yr
-  )
-  setDT(dbGetQuery(con, sql))
-}))
+  )))
+  yr_dt <- dt[YEAR == yr, .(YEAR, SERIAL, HHWT, female_pernum, male_pernum)]
+
+  yr_dt <- merge(yr_dt, cap, by.x = c("SERIAL", "female_pernum"),
+                 by.y = c("SERIAL", "PERNUM"), all.x = TRUE)
+  setnames(yr_dt, "cap_inc", "f_cap")
+  yr_dt <- merge(yr_dt, cap, by.x = c("SERIAL", "male_pernum"),
+                 by.y = c("SERIAL", "PERNUM"), all.x = TRUE)
+  setnames(yr_dt, "cap_inc", "m_cap")
+  rm(cap)
+
+  out <- yr_dt[!is.na(f_cap) & !is.na(m_cap) & f_cap > 0 & m_cap > 0,
+               .(YEAR, HHWT, z_capital = f_cap / (f_cap + m_cap))]
+  rm(yr_dt); gc(verbose = FALSE)
+  message("    ", yr, ": ", nrow(out), " couples with both capital income > 0")
+  out
+})
 dbDisconnect(con)
 
-dt <- merge(dt, capital_income,
-            by.x = c("YEAR", "SAMPLE", "SERIAL", "female_pernum"),
-            by.y = c("YEAR", "SAMPLE", "SERIAL", "PERNUM"), all.x = TRUE)
-setnames(dt, "capital_income", "female_capital_income")
-dt <- merge(dt, capital_income,
-            by.x = c("YEAR", "SAMPLE", "SERIAL", "male_pernum"),
-            by.y = c("YEAR", "SAMPLE", "SERIAL", "PERNUM"), all.x = TRUE)
-setnames(dt, "capital_income", "male_capital_income")
-
-dt[, female_capital_income := pmax(female_capital_income, 0)]
-dt[, male_capital_income   := pmax(male_capital_income, 0)]
-dt[, z_capital := fifelse(
-  female_capital_income > 0 & male_capital_income > 0,
-  female_capital_income / (female_capital_income + male_capital_income),
-  NA_real_
-)]
-message("  Capital-income interior N: ", dt[!is.na(z_capital), .N],
+z_capital_dt <- rbindlist(z_capital_list)
+rm(z_capital_list); gc(verbose = FALSE)
+message("  Capital-income interior N: ", nrow(z_capital_dt),
         " (small/noisy — capital income has no wealth-stock denominator in ACS; ",
         "directional evidence only, per plan caveat)")
 
 t1_long <- rbindlist(list(
-  dt[!is.na(z_labor),   .(YEAR, HHWT, z = z_labor,   measure = "(a) Labor earnings")],
-  dt[!is.na(z_total),   .(YEAR, HHWT, z = z_total,   measure = "(b) Total income")],
-  dt[!is.na(z_capital), .(YEAR, HHWT, z = z_capital, measure = "(c) Capital/non-labor income")]
+  dt[!is.na(z_labor), .(YEAR, HHWT, z = z_labor, measure = "(a) Labor earnings")],
+  dt[!is.na(z_total), .(YEAR, HHWT, z = z_total, measure = "(b) Total income")],
+  z_capital_dt[, .(YEAR, HHWT, z = z_capital, measure = "(c) Capital/non-labor income")]
 ))
 t1_long[, z_bin := round(z * 100) / 100]
 

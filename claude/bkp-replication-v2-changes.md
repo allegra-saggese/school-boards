@@ -103,16 +103,37 @@ of chores, ATUS × CPS). See `claude/future-extensions.md`.
   wife-candidate × husband-candidate SQL join on `ipums_data.sqlite`, bypassing
   the shared pipeline's household-composition CTE entirely (see architecture
   note below).
-- **Income:** INCWAGE only for now (labor income concept #5 above — see
-  `INCOME_MEASURE_SWAP` note in the script header and the new-extract gate in
-  `claude/future-extensions.md`).
-- **Race:** White/Black/Other (RACE variable only — no HISPAN in our extract,
-  so BKP's white/Black/Hispanic split isn't exactly reproduced).
-- **2000 decennial:** not in our extract; ACS 2001 used as the nearest
-  available proxy, labeled as such everywhere it appears.
-- **ACS 2008-2010 "3-year aggregate":** approximated by stacking the three
-  1-year ACS files (2008, 2009, 2010) we have, not the Census Bureau's pooled
-  3-year microdata product (different weighting scheme).
+- **Income:** LABOR income = wage + self-employment, matching BKP. Era-spliced
+  because IPUMS changes the variable: `INCBUS + INCFARM` (1950-2000, reported
+  separately) and `INCBUS00` (2000 onward, combined); 2000 carries both and we
+  prefer `INCBUS00` so the census and ACS eras share one definition. See
+  `labor_income()` in `ipums-bkp-pure-replication.R`.
+  - Two hazards handled there. (a) **IPUMS N/A sentinels**: income variables
+    use 999999/999998/9999999-style codes for "not in universe", which are NOT
+    dollars. Verified on the old extract: `INCWAGE = 999999` appears on every
+    under-16 record and none at 16+, so the adult age restrictions had already
+    excluded them and no existing result is affected — but the guard now lives
+    in code rather than depending on an age filter nobody may think to check.
+    (b) **Negative self-employment income is legitimate** (business/farm
+    losses), so components are summed first and only the total is clamped at
+    zero; clamping each component would silently discard losses.
+- **Race:** BKP's three marriage-market groups — (non-Hispanic) white,
+  (non-Hispanic) Black, Hispanic — via `RACE` + `HISPAN`, with other races
+  dropped exactly as BKP do. Hispanic origin takes precedence over `RACE`.
+- **2000 decennial:** the real 2000 5% sample (the earlier ACS-2001 proxy is
+  retired).
+- **1970:** pools Form 1 + Form 2 State samples (`us1970a` + `us1970b`) for ~2%
+  instead of 1%. The two forms are different questionnaires and do not overlap.
+  Each carries weights calibrated to its own 1% sample, so weights are halved
+  when pooled — otherwise weighted population totals would double. (Shares and
+  weighted means are unaffected; the factor cancels.)
+- **ACS 2008-2010 "3-year aggregate":** we stack the three 1-year ACS files
+  rather than using the 3-year product. The 3-year file contains the same
+  respondents, so carrying both would double-count. BKP's use of it reflected
+  the data vintage available to them in 2013, not a property worth reproducing.
+  Weighting differs slightly as a result.
+- **Coverage extended to 2024** (BKP's own sample ended 2011), to test whether
+  the 0.5 cliff has moved in the decade since publication.
 - **Regression sample cap:** `lm()` + `vcovCL` on the full multi-million-row
   pooled Table 2/3 sample is impractically slow. Fitting uses a capped random
   subsample (250k rows, `set.seed(42)`) — sanity-check summary statistics
