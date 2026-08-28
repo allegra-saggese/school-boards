@@ -11,14 +11,6 @@ source("R/paths.R")
 # =========================================================
 # BKP (Bertrand, Kamenica & Pan, QJE 2015) — PURE replication
 #
-# Corrects ipums-bkp-replication-approximate.R against BKP's actual sample
-# construction, verified directly against the NBER working paper (w19023) text.
-# Queries data/interim/ipums_bkp.sqlite directly (built by
-# ipums-bkp-build-database.R). Deliberately does NOT use the shared
-# ipums_married_oppositesex_spouse_pairs_with_kids.csv pair-builder in
-# ipums-county-household-analysis.R, whose age/household/county restrictions
-# differ from BKP's and are relied on by many other scripts.
-#
 # Sample construction, matched to BKP Section 3.1 and Section 5:
 #   - Figure 1: ACS 2008-2010, young couples (wife 22-31, husband 24-33), both
 #     spouses with labor income > 0 (interior).
@@ -572,16 +564,44 @@ run_table2_table3 <- function(years, era_label) {
     pairs[sample(.N, max_reg_n)]
   } else pairs
 
-  # Table 2, Column (1)-style baseline: wifeLFP ~ PrWifeEarnsMore + potential
-  # vigintile controls + ln(husb income) + year/state FE + race + age-group +
-  # education-group dummies (both spouses).
+  # WHY BOTH SPECIFICATIONS ARE REPORTED — this is not cosmetic.
+  #
+  # PrWifeEarnsMore is a deterministic function of the wife's potential-income
+  # vector and the husband's actual income. Her potential vector is constant
+  # within a demographic cell, so WITHIN a cell PrWifeEarnsMore varies only
+  # through the husband's income, as a decreasing step function of it. beta1 is
+  # therefore identified purely off how that step function departs from
+  # whatever functional form the husband-income control takes.
+  #
+  # That makes the linear-ln(husbIncome) baseline (BKP Column 1) fragile: if
+  # wives' participation falls with husband income faster than log-linear, the
+  # unmodelled curvature loads onto beta1 with a POSITIVE sign. Measured here:
+  # +0.02 to +0.11 in every year, versus BKP's -0.254.
+  #
+  # Adding BKP's own cubic in ln(husbIncome) (their Column 2) restores a
+  # negative estimate in every year (-0.04 to -0.15, vs BKP's -0.182). BKP
+  # include that cubic for exactly this reason. We report both so the
+  # sensitivity is visible rather than hidden behind one chosen spec.
+  base_controls <- paste0(
+    " + factor(YEAR) + factor(STATEICP) + race3 + husb_race3",
+    " + age5 + husb_age5 + educ5 + husb_educ5"
+  )
+
+  # Column (1): linear in ln(husband income)
   fmla_lfp <- as.formula(paste0(
     "wife_lfp ~ PrWifeEarnsMore + ", potential_formula,
-    " + ln_husb_income + factor(YEAR) + factor(STATEICP) + race3 + husb_race3",
-    " + age5 + husb_age5 + educ5 + husb_educ5"
+    " + ln_husb_income", base_controls
   ))
   fit_lfp <- lm(fmla_lfp, data = reg_sample, weights = HHWT)
   se_lfp  <- cluster_se(fit_lfp, reg_sample$cell_id)
+
+  # Column (2): cubic polynomial in ln(husband income) — preferred
+  fmla_lfp_cubic <- as.formula(paste0(
+    "wife_lfp ~ PrWifeEarnsMore + ", potential_formula,
+    " + ln_husb_income + I(ln_husb_income^2) + I(ln_husb_income^3)", base_controls
+  ))
+  fit_lfp_cubic <- lm(fmla_lfp_cubic, data = reg_sample, weights = HHWT)
+  se_lfp_cubic  <- cluster_se(fit_lfp_cubic, reg_sample$cell_id)
 
   # Table 3-style: income gap ~ same RHS, working wives only.
   reg_sample_working <- reg_sample[wife_working == 1]
@@ -604,8 +624,9 @@ run_table2_table3 <- function(years, era_label) {
   }
 
   results <- rbindlist(list(
-    extract_beta1(se_lfp, fit_lfp, "Wife LFP (Table 2 analog)"),
-    extract_beta1(se_gap, fit_gap, "Income gap (Table 3 analog)")
+    extract_beta1(se_lfp,       fit_lfp,       "Wife LFP  [col 1: linear ln(husb inc)]"),
+    extract_beta1(se_lfp_cubic, fit_lfp_cubic, "Wife LFP  [col 2: CUBIC ln(husb inc)] <- preferred"),
+    extract_beta1(se_gap,       fit_gap,       "Income gap (Table 3 analog)")
   ))
 
   message("  Table 2/3 results (", era_label, "):")
@@ -623,14 +644,14 @@ table23_bkp_era <- run_table2_table3(bkp_era_table_years, "BKP era (1970-2010)")
 
 # ── 7) 10-years-on extension ───────────────────────────────────────────────
 
-message("Building 10-years-on Figure 1 analog (young couples, ACS 2021-2023) ...")
+message("Building 10-years-on Figure 1 analog (young couples, ACS 2022-2024) ...")
 pairs_young_ext <- build_bkp_pairs(extension_young_years, young_wife_age, young_husb_age)
 pairs_young_ext[, female_labor_income := labor_income(female_incwage, female_incbus, female_incfarm, female_incbus00)]
 pairs_young_ext[, male_labor_income   := labor_income(male_incwage, male_incbus, male_incfarm, male_incbus00)]
 ext_interior <- pairs_young_ext[female_labor_income > 0 & male_labor_income > 0]
 ext_interior[, z := female_labor_income / (female_labor_income + male_labor_income)]
 ext_density <- recode_half_mass_triangular(ext_interior, "z", "HHWT", n_bins = 20L)
-ext_density[, era := "2021-2023 (10 years on)"]
+ext_density[, era := "2022-2024 (10+ years on)"]
 fig1_density[, era := "2008-2010 (BKP era)"]
 
 fig1_compare <- rbindlist(list(fig1_density, ext_density))
@@ -639,7 +660,7 @@ p_fig1_compare <- ggplot(fig1_compare, aes(x = bin_mid, y = share, color = era))
   geom_line(alpha = 0.6) +
   geom_vline(xintercept = 0.5, linetype = "dashed", color = "grey30") +
   scale_color_manual(values = c("2008-2010 (BKP era)" = "steelblue4",
-                                 "2021-2023 (10 years on)" = "#d73027"), name = NULL) +
+                                 "2022-2024 (10+ years on)" = "#d73027"), name = NULL) +
   labs(
     title    = "Has the 0.5 cliff changed 10+ years after BKP's sample?",
     subtitle = "Young couples, triangular-kernel recode, same construction as Figure 1",
@@ -650,7 +671,7 @@ p_fig1_compare <- ggplot(fig1_compare, aes(x = bin_mid, y = share, color = era))
 
 save_plot("bkp_pure_figure1_era_comparison.png", { print(p_fig1_compare) }, width = 1800, height = 1200)
 
-table23_extension <- run_table2_table3(extension_table_years, "Post-BKP (2011-2023)")
+table23_extension <- run_table2_table3(extension_table_years, "Post-BKP (2011-2024)")
 
 era_comparison <- rbindlist(list(table23_bkp_era$results, table23_extension$results))
 message("\nPrWifeEarnsMore coefficient (beta1), BKP era vs. 10-years-on:")

@@ -22,6 +22,19 @@ source("functions.R")
 # labor-income measure. If both qualify they are pooled and weights halved.
 years_keep <- c(1970, 1980, 1990, 2000, 2001:2024)
 
+# MEASURED COUNTY COVERAGE (why some years yield no spouse pairs here):
+# the pair builder requires COUNTYICP, and county identification varies a lot:
+#     1970          0%   <- State-form samples carry no county codes at all
+#     2001-2004     0%   <- early ACS published no county identifiers
+#     1980/1990/2000  55-60%
+#     2005-2024       56-62%
+# So 1970 and 2001-2004 drop out of every county-based output no matter what
+# years_keep says. They are retained in years_keep because the non-county
+# sections still use them, and because the BKP scripts — which use no county
+# filter — do analyse 1970 and 2000.
+# The 55-62% figure is also the scale of the standing caveat below: the county
+# filter keeps a non-random subset biased toward large counties.
+#
 # Age/geography restrictions deliberately UNCHANGED from the original pipeline.
 # Every existing analysis (RDD, married-household suite, OLS, frontier merge)
 # is built on these, so altering them would silently shift published numbers.
@@ -143,6 +156,29 @@ if (build_indexes) {
 year_list_sql <- paste(years_keep, collapse = ",")
 
 # =========================================================
+# 2a) Sequential range scans instead of index seeks
+# =========================================================
+# PERFORMANCE, measured. Finding rows by YEAR via idx_ipums_age_sex is instant,
+# but FETCHING 20+ columns for the matches means one random page read per row
+# into a ~15GB file. For the 2000 decennial (14M rows) that is millions of
+# random reads: measured at 5m09s for a single sex-year at 1% CPU, versus 1.06s
+# for the same result read sequentially — roughly 290x.
+#
+# Rows were inserted in file order, so each YEAR occupies a contiguous rowid
+# range. Scanning that range is sequential I/O. NOT INDEXED stops the planner
+# reverting to the index; the YEAR predicate is retained so results stay correct
+# regardless of physical layout.
+year_rowid_ranges <- dbGetQuery(
+  con, "SELECT YEAR, MIN(rowid) AS lo, MAX(rowid) AS hi FROM ipums_table GROUP BY YEAR"
+)
+
+year_rowid_clause <- function(yr) {
+  r <- year_rowid_ranges[year_rowid_ranges$YEAR == as.integer(yr), ]
+  if (nrow(r) == 0) stop("Year not present in database: ", yr)
+  paste0(" rowid BETWEEN ", r$lo, " AND ", r$hi, " AND YEAR = ", yr, " ")
+}
+
+# =========================================================
 # 2b) 1970 sample selection + labor-income helpers
 # =========================================================
 # Keep the 1970 form(s) that actually report self-employment income, rather
@@ -201,7 +237,7 @@ labor_income_calc <- function(incwage, incbus, incfarm, incbus00) {
 county_sql <- paste0(
   "WITH base AS (",
   "  SELECT YEAR, STATEICP, COUNTYICP, SEX, AGE, PERWT, EMPSTAT, UHRSWORK, WKSWORK1 ",
-  "  FROM ipums_table ",
+  "  FROM ipums_table NOT INDEXED ",
   "  WHERE YEAR IN (", year_list_sql, ") ",
   "    AND STATEICP IS NOT NULL ",
   "    AND COUNTYICP IS NOT NULL ",
@@ -256,7 +292,7 @@ message("County-level LFPR/hours panel written: ", county_file)
 kids_sql <- paste0(
   "WITH base AS (",
   "  SELECT YEAR, STATEICP, COUNTYICP, PERWT, EMPSTAT, YNGCH ",
-  "  FROM ipums_table ",
+  "  FROM ipums_table NOT INDEXED ",
   "  WHERE YEAR IN (", year_list_sql, ") ",
   "    AND SEX = 2 ",
   "    AND AGE BETWEEN ", county_age_min, " AND ", county_age_max, " ",
@@ -388,10 +424,13 @@ for (yr in years_keep) {
     "  SELECT YEAR, SAMPLE, SERIAL, PERNUM, STATEICP, COUNTYICP, AGE, SEX, SPLOC, HHWT, HHINCOME,",
     "         EMPSTAT, UHRSWORK, WKSWORK1, INCWAGE, INCTOT, INCSS, INCWELFR, NCHILD,",
     "         INCBUS, INCFARM, INCBUS00, RACE, HISPAN, EDUC, MARST ",
-    "  FROM ipums_table ",
-    "  WHERE YEAR = ", yr, " ",
+    "  FROM ipums_table NOT INDEXED ",
+    "  WHERE", year_rowid_clause(yr),
     "    AND STATEICP IS NOT NULL ",
     "    AND COUNTYICP IS NOT NULL",
+    # 1970 carries two questionnaire forms; keep only the detected one(s).
+    if (yr == 1970 && length(samples_1970) > 0)
+      paste0("    AND SAMPLE IN (", paste(samples_1970, collapse = ","), ") ") else "",
     "), hh_screen AS (",
     "  SELECT YEAR, SAMPLE, SERIAL,",
     "         SUM(CASE WHEN AGE BETWEEN ", spouse_age_min, " AND ", spouse_age_max, " THEN 1 ELSE 0 END) AS n_work_age,",
@@ -479,7 +518,20 @@ for (yr in years_keep) {
     "FROM pairs"
   )
 
-  pairs_year <- dbGetQuery(con, pair_sql) %>%
+  pairs_year <- dbGetQuery(con, pair_sql)
+
+  # WEIGHT ADJUSTMENT for pooled 1970 forms. Form 1 and Form 2 do not overlap,
+  # but each carries weights calibrated so that ITS OWN 1% sample sums to the
+  # US population. Pooling both without rescaling would imply 2x the true
+  # population in every weighted count for 1970. Shares and weighted means are
+  # unaffected either way (the factor cancels), but counts are not.
+  if (yr == 1970 && length(samples_1970) > 1) {
+    pairs_year$HHWT <- pairs_year$HHWT / length(samples_1970)
+    message("  1970: pooled ", length(samples_1970),
+            " forms; HHWT scaled by 1/", length(samples_1970))
+  }
+
+  pairs_year <- pairs_year %>%
     mutate(
       hhincome_nominal = ifelse(!is.na(HHINCOME) & HHINCOME > 0, HHINCOME, NA_real_),
       female_weekly_hours = ifelse(female_empstat == 1 & !is.na(female_uhrswork_raw) & female_uhrswork_raw >= 0, female_uhrswork_raw, 0),
@@ -905,13 +957,18 @@ if (nrow(scatter_sample_out) > 0) {
 comp_sql <- paste0(
   "WITH hh_base AS (",
   "  SELECT YEAR, SAMPLE, SERIAL,",
-  "         MAX(NUMPREC) AS numprec,",
+  # NUMPREC (household size) is not in the targeted extract, but it is exactly
+  # the number of person records in the household — and this query already
+  # groups by (YEAR, SAMPLE, SERIAL), so COUNT(*) reproduces it. GQ is a
+  # household-level attribute, so the GQ filter cannot split a household and
+  # bias the count.
+  "         COUNT(*) AS numprec,",
   "         MAX(HHWT) AS hhwt,",
   "         SUM(CASE WHEN SPLOC > 0 AND SEX = 2 AND AGE BETWEEN 18 AND 70 THEN 1 ELSE 0 END) AS n_wife_linked,",
   "         SUM(CASE WHEN SPLOC > 0 AND SEX = 1 AND AGE BETWEEN 18 AND 70 THEN 1 ELSE 0 END) AS n_husb_linked,",
   "         MAX(CASE WHEN SPLOC > 0 AND SEX = 2 AND AGE BETWEEN 18 AND 70 THEN EMPSTAT END) AS wife_empstat,",
   "         MAX(CASE WHEN SPLOC > 0 AND SEX = 1 AND AGE BETWEEN 18 AND 70 THEN EMPSTAT END) AS husb_empstat ",
-  "  FROM ipums_table ",
+  "  FROM ipums_table NOT INDEXED ",
   "  WHERE YEAR IN (", paste(years_keep, collapse = ","), ") AND GQ IN (1, 2) ",
   "  GROUP BY YEAR, SAMPLE, SERIAL",
   ") ",
