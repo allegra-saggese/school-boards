@@ -1083,54 +1083,92 @@ stateicp_fips_xwalk <- data.frame(
 )
 
 # Build FIPS string from STATEICP and COUNTYICP
-pairs_raw <- read_csv(pair_file, show_col_types = FALSE)
+# MEMORY-SAFE (data.table). The previous dplyr version read the pair file as a
+# tibble, then left_join produced another full copy, then write_csv needed more
+# again. With the rebuilt panel at 4.6GB (more years, more columns) that
+# exceeded R's 24GB vector limit on this machine. data.table's fread is far more
+# compact, `:=` adds columns by reference without copying, and fwrite streams
+# out. Same output, same column names — only the memory profile changes.
+suppressPackageStartupMessages(library(data.table))
 
-pairs_with_fips <- pairs_raw %>%
-  left_join(stateicp_fips_xwalk, by = "STATEICP") %>%
-  mutate(
-    county_fips_int = as.integer(floor(COUNTYICP / 10)),
-    fips = ifelse(
-      !is.na(state_fips) & !is.na(county_fips_int) & county_fips_int > 0,
-      sprintf("%02d%03d", state_fips, county_fips_int),
-      NA_character_
-    )
-  )
+# STREAMED YEAR-BY-YEAR THROUGH A TEMP FILE.
+# The earlier version held the whole 4.6GB panel, then merge() produced a second
+# full copy, then fwrite needed a third — which hit R's 24GB vector limit on this
+# machine. Nothing here needs all years resident at once: the FIPS key and the
+# political join are both within-year. So we read one year, join it, append it to
+# a temp file, and drop it. Peak memory is one year (~2M rows) instead of 14M,
+# and the temp file is moved into place only after every year succeeds, so a
+# failure part-way cannot leave a half-written panel behind.
+merged_file <- file.path(panel_dir, "ipums_married_oppositesex_spouse_pairs_with_groups.csv")
+tmp_merged  <- tempfile(pattern = "pairs_groups_", fileext = ".csv")
+on.exit(unlink(tmp_merged), add = TRUE)
 
-match_rate <- mean(!is.na(pairs_with_fips$fips)) * 100
-message("Spouse-pair FIPS match rate: ", round(match_rate, 1), "% of household-year observations")
+xwalk_dt <- as.data.table(stateicp_fips_xwalk)
 
-# Load the political-income group panel (latest dated file)
+# The vote panel is county-year and small (~35k rows), so it stays resident.
 groups_files <- list.files(
   data_path("processed", "panel"),
   pattern = "_lfpr_panel_with_groups\\.csv$",
   full.names = TRUE
 )
 if (length(groups_files) == 0) stop("No lfpr_panel_with_groups file found; run lfpr-groupings.R first.")
-groups_panel <- read_csv(sort(groups_files)[length(groups_files)], show_col_types = FALSE) %>%
-  select(fips, year, vote_margin, vote_spread, dem_percent, rep_percent,
-         income_quintile_national, income_quintile_state,
-         trad, asp_trad, dem_solid_poor, dem_solid_rich) %>%
-  rename(YEAR = year)
-
-# Merge: left join on (fips, YEAR) — LOCF already applied in groups_panel
-pairs_merged <- pairs_with_fips %>%
-  left_join(groups_panel, by = c("fips", "YEAR"))
-
-group_match_rate <- mean(!is.na(pairs_merged$vote_margin)) * 100
-message("Political group merge rate: ", round(group_match_rate, 1),
-        "% of households matched to vote data")
-
-# Validation: group flags should be mutually exclusive
-overlap_n <- sum(
-  (coalesce(pairs_merged$trad, 0) + coalesce(pairs_merged$asp_trad, 0) +
-   coalesce(pairs_merged$dem_solid_poor, 0) + coalesce(pairs_merged$dem_solid_rich, 0)) > 1,
-  na.rm = TRUE
+groups_dt <- fread(
+  sort(groups_files)[length(groups_files)],
+  select = c("fips", "year", "vote_margin", "vote_spread", "dem_percent", "rep_percent",
+             "income_quintile_national", "income_quintile_state",
+             "trad", "asp_trad", "dem_solid_poor", "dem_solid_rich"),
+  showProgress = FALSE
 )
+setnames(groups_dt, "year", "YEAR")
+groups_dt[, fips := pad_fips(fips)]
+setkey(groups_dt, fips, YEAR)
+
+# Read the pair file ONCE (fread is compact — the old failure came from readr's
+# tibble plus dplyr join copies, not from holding the table itself), then slice
+# a year at a time. Re-reading the 4.6GB file inside the loop would mean ~23
+# full passes over disk for no benefit.
+pairs_all  <- fread(pair_file, showProgress = FALSE)
+pair_years <- sort(unique(pairs_all$YEAR))
+fips_ok <- 0; fips_n <- 0; grp_ok <- 0; overlap_n <- 0; first <- TRUE
+
+for (yr in pair_years) {
+  chunk <- pairs_all[YEAR == yr]
+  chunk <- merge(chunk, xwalk_dt, by = "STATEICP", all.x = TRUE)
+  chunk[, county_fips_int := as.integer(floor(COUNTYICP / 10))]
+  chunk[, fips := fifelse(
+    !is.na(state_fips) & !is.na(county_fips_int) & county_fips_int > 0,
+    sprintf("%02d%03d", state_fips, county_fips_int), NA_character_)]
+  fips_ok <- fips_ok + sum(!is.na(chunk$fips)); fips_n <- fips_n + nrow(chunk)
+
+  chunk[, fips := pad_fips(fips)]
+  chunk <- merge(chunk, groups_dt, by = c("fips", "YEAR"), all.x = TRUE)
+  grp_ok <- grp_ok + sum(!is.na(chunk$vote_margin))
+  overlap_n <- overlap_n + chunk[
+    (fcoalesce(as.integer(trad), 0L) + fcoalesce(as.integer(asp_trad), 0L) +
+     fcoalesce(as.integer(dem_solid_poor), 0L) + fcoalesce(as.integer(dem_solid_rich), 0L)) > 1, .N]
+
+  # quote = TRUE writes fips as "06037" rather than 06037. NOTE this is NOT
+  # sufficient protection on its own: fread() strips the quotes and re-types the
+  # column as integer regardless, so "06037" still comes back as 6037. VERIFIED.
+  # Anything reading this file MUST call pad_fips() (functions.R) or pass
+  # colClasses = c(fips = "character"). The quoting only preserves the value in
+  # the file itself; it does not survive a default fread().
+  fwrite(chunk, tmp_merged, append = !first, quote = TRUE)
+  first <- FALSE
+  rm(chunk); invisible(gc(verbose = FALSE))
+}
+
+message("Spouse-pair FIPS match rate: ", round(100 * fips_ok / fips_n, 1),
+        "% of household-year observations")
+message("Political group merge rate: ", round(100 * grp_ok / fips_n, 1),
+        "% of households matched to vote data")
 message("Political group overlap check: ", overlap_n,
         " households flagged in more than one group (should be 0)")
 
-merged_file <- file.path(panel_dir, "ipums_married_oppositesex_spouse_pairs_with_groups.csv")
-write_csv(pairs_merged, merged_file)
+rm(pairs_all); invisible(gc(verbose = FALSE))
+
+# Only now replace the previous panel — an aborted run leaves it untouched.
+file.copy(tmp_merged, merged_file, overwrite = TRUE)
 message("Merged spouse-pair file written: ", merged_file)
 
 message("IPUMS county-household pipeline complete.")

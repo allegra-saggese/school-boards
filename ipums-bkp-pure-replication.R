@@ -543,17 +543,47 @@ run_table2_table3 <- function(years, era_label) {
           "(cell weighted N < ", min_cell_n, ").")
 
   pot_mat <- as.matrix(pairs[, ..potential_cols])
-  pairs[, PrWifeEarnsMore := rowMeans(pot_mat > male_labor_income)]
 
-  pairs[, wife_lfp   := as.integer(female_empstat %in% c(1, 2))]
+  # PrWifeEarnsMore and incomeGap are built from NOMINAL dollars, and that is
+  # correct: a probability and a ratio are both scale-free, so deflation cannot
+  # change them. Only the dollar CONTROLS are deflated (below).
+  pairs[, PrWifeEarnsMore := rowMeans(pot_mat > male_labor_income)]
+  pairs[, wife_potential_mean := rowMeans(pot_mat)]   # BKP: mean of the
+                                                      # potential distribution
+
+  pairs[, wife_lfp     := as.integer(female_empstat %in% c(1, 2))]
   pairs[, wife_working := as.integer(female_empstat == 1)]
-  pairs[, ln_husb_income := log1p(pmax(male_labor_income, 0))]
-  pairs[, wife_potential_mean := rowMeans(pot_mat)]
+
+  # Table 3 sample = working wives, and we additionally require POSITIVE
+  # earnings. Measured: 3.4% of EMPSTAT==1 wives report zero labor income,
+  # which pins incomeGap at exactly -1 and inflates |beta1| (-0.088 -> -0.058
+  # in the cubic spec). BKP's potential distribution is defined over positive
+  # earnings, so positive realized earnings is the faithful comparison.
+  pairs[, wife_earning := as.integer(female_empstat == 1 & female_labor_income > 0)]
   pairs[, income_gap := ifelse(
-    wife_working == 1 & wife_potential_mean > 0,
+    wife_earning == 1 & wife_potential_mean > 0,
     (female_labor_income - wife_potential_mean) / wife_potential_mean,
     NA_real_
   )]
+
+  # NOMINAL dollars, matching BKP — deliberate, and worth stating because the
+  # instinct to deflate is a natural one:
+  #
+  #  * BKP never deflate. The paper contains no mention of CPI, real dollars, or
+  #    inflation adjustment; Table 2/3 use nominal income with year fixed effects.
+  #  * For the LOG control, deflation is mathematically REDUNDANT here.
+  #    log(nominal_t) = log(real) + log(CPI_t), and log(CPI_t) is a pure year
+  #    constant that the year fixed effects already absorb. Verified: the
+  #    PrWifeEarnsMore coefficient is identical to six decimals either way.
+  #  * It is NOT redundant for the potential-income vigintiles, which enter as
+  #    LEVELS. Deflating those rescales them per year — a slope change year FE
+  #    cannot absorb. Measured effect on the Table 3 cubic estimate: -0.088
+  #    nominal vs -0.078 real, i.e. real but second-order.
+  #
+  # Baseline therefore stays nominal for fidelity to BKP. deflate_to() and
+  # cpi_u_annual() live in functions.R for the augmented track, which is not
+  # bound by BKP's choices and pools a wider span of years.
+  pairs[, ln_husb_income := log1p(pmax(male_labor_income, 0))]
   pairs[, cell_id := interaction(YEAR, STATEICP, age5, educ5, race3, drop = TRUE)]
 
   potential_formula <- paste(potential_cols, collapse = " + ")
@@ -603,8 +633,8 @@ run_table2_table3 <- function(years, era_label) {
   fit_lfp_cubic <- lm(fmla_lfp_cubic, data = reg_sample, weights = HHWT)
   se_lfp_cubic  <- cluster_se(fit_lfp_cubic, reg_sample$cell_id)
 
-  # Table 3-style: income gap ~ same RHS, working wives only.
-  reg_sample_working <- reg_sample[wife_working == 1]
+  # Table 3: income gap ~ same RHS, working wives WITH POSITIVE EARNINGS.
+  reg_sample_working <- reg_sample[wife_earning == 1]
   fmla_gap <- as.formula(paste0(
     "income_gap ~ PrWifeEarnsMore + ", potential_formula,
     " + ln_husb_income + factor(YEAR) + factor(STATEICP) + race3 + husb_race3",
@@ -612,6 +642,17 @@ run_table2_table3 <- function(years, era_label) {
   ))
   fit_gap <- lm(fmla_gap, data = reg_sample_working, weights = HHWT)
   se_gap  <- cluster_se(fit_gap, reg_sample_working$cell_id)
+
+  # Table 3 Column (2): cubic in ln(husband income). Reported alongside the
+  # linear baseline for the same reason as Table 2 — beta1 is identified off
+  # functional form, and the two specs differ by a factor of ~3 here
+  # (linear -0.281 vs cubic -0.088; BKP report -0.094 and -0.174).
+  fmla_gap_cubic <- as.formula(paste0(
+    "income_gap ~ PrWifeEarnsMore + ", potential_formula,
+    " + ln_husb_income + I(ln_husb_income^2) + I(ln_husb_income^3)", base_controls
+  ))
+  fit_gap_cubic <- lm(fmla_gap_cubic, data = reg_sample_working, weights = HHWT)
+  se_gap_cubic  <- cluster_se(fit_gap_cubic, reg_sample_working$cell_id)
 
   extract_beta1 <- function(se_obj, fit, label) {
     row <- se_obj["PrWifeEarnsMore", ]
@@ -626,7 +667,8 @@ run_table2_table3 <- function(years, era_label) {
   results <- rbindlist(list(
     extract_beta1(se_lfp,       fit_lfp,       "Wife LFP  [col 1: linear ln(husb inc)]"),
     extract_beta1(se_lfp_cubic, fit_lfp_cubic, "Wife LFP  [col 2: CUBIC ln(husb inc)] <- preferred"),
-    extract_beta1(se_gap,       fit_gap,       "Income gap (Table 3 analog)")
+    extract_beta1(se_gap,       fit_gap,       "Income gap [col 1: linear ln(husb inc)]"),
+    extract_beta1(se_gap_cubic, fit_gap_cubic, "Income gap [col 2: CUBIC ln(husb inc)] <- preferred")
   ))
 
   message("  Table 2/3 results (", era_label, "):")

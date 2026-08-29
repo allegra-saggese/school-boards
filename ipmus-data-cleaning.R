@@ -1,3 +1,21 @@
+# =========================================================
+# SUPERSEDED — DO NOT RUN
+#
+# This script built data/interim/ipums_data.sqlite from IPUMS extract
+# usa_00001 (277 variables, 1980/1990 + ACS 2005-2023). That database has been
+# REPLACED by data/interim/ipums_bkp.sqlite, built by
+# ipums-bkp-build-database.R from extract #4, which adds self-employment income
+# (INCBUS/INCFARM/INCBUS00), HISPAN, MARST, the 2000 decennial, 1970, ACS
+# 2001-2004 and 2024 — none of which exist in the old extract.
+#
+# Every analysis script now reads ipums_bkp.sqlite. Running this would rebuild a
+# 39GB obsolete database that nothing consumes. It is kept only as a record of
+# how the original extract was ingested.
+#
+# The GRF/spatial unzipping at the top is unrelated to IPUMS and still valid if
+# you need it; the IPUMS ingestion below is what is superseded.
+# =========================================================
+
 # purpose: script for cleaning IPMUS data
 # author : allegra saggese
 library(R.utils)
@@ -99,6 +117,9 @@ read_ipums_micro_chunked(
 
 # now create a SQL database to callback / store 
 ensure_dir(data_path("interim"))
+stop("ipmus-data-cleaning.R is superseded — use ipums-bkp-build-database.R. ",
+     "See the header. Comment out this stop() only if you deliberately want ",
+     "to rebuild the obsolete 277-variable database.")
 con <- dbConnect(SQLite(), data_path("interim", "ipums_data.sqlite"))
 
 # Modify the chunk callback to store each chunk in the database

@@ -24,15 +24,15 @@ counties — evidence of bargaining, not just constraint?
 - `lfpr-panel-analysis.R` → county LFPR + income panel from ACS 5-year, CPI-adjusted
 - `lfpr-groupings.R` → political-income group indicators (trad/asp_trad/dem_solid_poor/dem_solid_rich); *Section 6* adds departure descriptives: female LFPR × income quintile × political direction
 
-**Track B — IPUMS household microdata (1980–2023):**
-- `ipums-data-cleaning.R` → builds SQLite database from IPUMS extract
+**Track B — IPUMS household microdata (1970–2024):**
+- Database is built by `ipums-bkp-build-database.R` (see BKP section below). `ipmus-data-cleaning.R` is **superseded**.
 - `ipums-county-household-analysis.R` → county LFPR/hours panel + opposite-sex married spouse-pair micro file; *Section 6* adds HH composition descriptives (1-person, 2-person, spousal breakdown); *Section 7* adds STATEICP/COUNTYICP → FIPS crosswalk and merges spouse-pair data to political groups
 - `ipums-married-household-suite.R` → multi-measure income analysis on spouse pairs; *Section 12* adds household-level hours × political group descriptives (requires Section 7 output)
 - `ipums-county-female-lfpr-scatter.R`, `ipums-wage-quintile-time-graphs.R`, `ipums-spouse-income-scatter-plots.R` → additional IPUMS graphs
 
 **BKP (2015) replication (Bertrand, Kamenica & Pan, QJE — "Gender Identity and Relative Income within Households"):**
-- `ipums-bkp-build-database.R` → downloads IPUMS USA extract #4 via the API and builds `data/interim/ipums_bkp.sqlite`. Requires `IPUMS_API_KEY` in `.Renviron` (gitignored). Decennial 1970 (both forms)/1980/1990/2000 5% + ACS 1-year 2001–2024, no overlapping samples; ~39 variables including self-employment income (`INCBUS`/`INCFARM`/`INCBUS00`) and `HISPAN`. Writes a *new* database; the legacy `ipums_data.sqlite` is left untouched. **Run this first.**
-- `ipums-bkp-pure-replication.R` → recreates BKP's actual sample/spec as closely as our data allows: Figure 1/2 (young-couple distribution, triangular-kernel recode of the exact-0.5 mass) and Table 2/3 (wife's LFP & income gap ~ `PrWifeEarnsMore`, a demographic-cell potential-income measure), extended through 2023. Queries `ipums_data.sqlite` directly — does **not** use the shared pair-builder above (different age/household-composition/county restrictions; see architecture note in `claude/bkp-replication-v2-changes.md`).
+- `ipums-bkp-build-database.R` → downloads IPUMS USA extract #4 via the API and builds `data/interim/ipums_bkp.sqlite`. Requires `IPUMS_API_KEY` in `.Renviron` (gitignored). Decennial 1970 (both forms)/1980/1990/2000 5% + ACS 1-year 2001–2024, no overlapping samples; ~39 variables including self-employment income (`INCBUS`/`INCFARM`/`INCBUS00`) and `HISPAN`. **Run this first.** Supersedes `ipmus-data-cleaning.R`, which is deprecated.
+- `ipums-bkp-pure-replication.R` → recreates BKP's actual sample/spec as closely as our data allows: Figure 1/2 (young-couple distribution, triangular-kernel recode of the exact-0.5 mass) and Table 2/3 (wife's LFP & income gap ~ `PrWifeEarnsMore`, a demographic-cell potential-income measure), extended through 2024. Queries `ipums_bkp.sqlite` directly — does **not** use the shared pair-builder above (different age/household-composition/county restrictions; see architecture note in `claude/bkp-replication-v2-changes.md`).
 - `ipums-bkp-augmented-tests.R` → second track: T1 income-share decomposition (labor/total/capital), T2 hourly-wage horse race, T3 political × frontier heterogeneity. Reuses the shared pair panel and the donut-RDD design from `ipums-rdd-breadwinner-norm.R`.
 - `ipums-bkp-replication-approximate.R` → earlier, approximate comparison (predates the corrected sample construction above); kept as-is, not on BKP's actual sample.
 - Internal decisions log and data-access gate: `claude/bkp-replication-v2-changes.md`, `claude/future-extensions.md`.
@@ -74,7 +74,7 @@ counties — evidence of bargaining, not just constraint?
 5. Run `lfpr-groupings.R` → political group indicators and departure descriptives (Section 6); outputs `YYYY-MM-DD_lfpr_panel_with_groups.csv`.
 
 **Track B — IPUMS household microdata:**
-6. Run `ipmus-data-cleaning.R` → `data/interim/ipums_data.sqlite`.
+6. Run `ipums-bkp-build-database.R` → `data/interim/ipums_bkp.sqlite` (needs `IPUMS_API_KEY` in `.Renviron`). *`ipmus-data-cleaning.R` is superseded and will refuse to run.*
 7. Run `ipums-county-household-analysis.R` → county LFPR panel, spouse-pair micro file, HH composition summary (Section 6), and political merge (Section 7).
    - Section 7 requires `lfpr_panel_with_groups.csv` from step 5.
    - Output: `ipums_married_oppositesex_spouse_pairs_with_groups.csv`

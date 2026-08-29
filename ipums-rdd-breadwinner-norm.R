@@ -147,7 +147,11 @@ panel_files <- list.files(panel_dir,
   pattern = "_lfpr_panel_with_groups[.]csv$", full.names = TRUE)
 pol_panel <- fread(sort(panel_files)[length(panel_files)],
                    select = c("fips", "year", "vote_margin"))
-pol_panel[, fips := as.character(fips)]
+# pad_fips(): fread types FIPS as integer and drops leading zeros, while the
+# line above builds a zero-padded key with sprintf("%02d%03d", ...). Without
+# padding both sides, every state numbered 01-09 (California included)
+# silently fails to merge. See functions.R.
+pol_panel[, fips := pad_fips(fips)]
 setnames(pol_panel, "year", "YEAR")
 pol_dt <- merge(pol_dt, pol_panel, by = c("fips", "YEAR"), all.x = TRUE)
 pol_dt <- pol_dt[!is.na(vote_margin)]
@@ -324,7 +328,7 @@ frontier_lu <- fread(
   file.path(panel_dir, "bazzi_frontier_indicators.csv"),
   select = c("fips", "is_frontier")
 )
-frontier_lu[, fips := as.character(fips)]
+frontier_lu[, fips := pad_fips(fips)]
 
 decile_cols <- c("YEAR", "HHWT", "fips",
                  "female_weekly_hours", "male_weekly_hours",
@@ -359,7 +363,7 @@ dec_dt[, political := fcase(
 )]
 
 # Merge frontier
-dec_dt[, fips := as.character(fips)]
+dec_dt[, fips := pad_fips(fips)]
 dec_dt <- merge(dec_dt, frontier_lu, by = "fips", all.x = TRUE)
 dec_dt[, frontier_label := fifelse(is_frontier == 1,
                                    "Frontier counties",

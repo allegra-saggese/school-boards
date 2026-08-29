@@ -1060,7 +1060,7 @@ if (!file.exists(merged_pair_file)) {
   frontier_lu[, fips := as.character(as.integer(fips))]
 
   if ("fips" %in% names(mpairs)) {
-    mpairs[, fips := as.character(fips)]
+    mpairs[, fips := pad_fips(fips)]
     mpairs_f <- merge(
       mpairs,
       frontier_lu,

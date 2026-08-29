@@ -57,14 +57,11 @@ results_dir <- data_path("processed", "results")
 ensure_dir(results_dir)
 
 sqlite_path <- data_path("interim", "ipums_bkp.sqlite")
-# NOTE ON MIXED VINTAGE: T1/T2 read the shared pair panel CSV, which was built
-# from the OLD extract by ipums-county-household-analysis.R, while the capital-
-# income columns below come from the NEW database. These are compatible —
-# (YEAR, SERIAL, PERNUM) are IPUMS sample identifiers and both extracts draw
-# the same 1-year ACS samples across the panel's years — but the pairing is
-# temporary. Once ipums-county-household-analysis.R is re-run against the new
-# database (see claude/future-extensions.md), the panel and this pull share one
-# vintage and the whole project inherits the corrected labor-income measure.
+# Both sides now share ONE data vintage: the pair panel was rebuilt from this
+# same database by ipums-county-household-analysis.R, so the capital-income
+# columns pulled here and the panel's own income columns come from IPUMS
+# extract 4 throughout. (Earlier this script paired a new-extract pull with an
+# old-extract panel; that is no longer the case.)
 
 below_above_ratio <- function(dt, z_col, wt_col, donut_w = donut_primary) {
   dt[, zb := round(get(z_col) * 100) / 100]
@@ -81,6 +78,7 @@ cols_base <- c(
   "YEAR", "SAMPLE", "SERIAL", "HHWT", "STATEICP", "COUNTYICP",
   "female_pernum", "male_pernum",
   "female_income_wage_nonneg", "male_income_wage_nonneg",
+  "female_income_labor", "male_income_labor",
   "female_income_total_nonneg", "male_income_total_nonneg",
   "female_weekly_hours", "male_weekly_hours",
   "female_annual_hours", "male_annual_hours",
@@ -96,12 +94,52 @@ dt <- fread(
 
 message("T1: building three-way income-share decomposition ...")
 
-# (a) labor earnings share (wage/salary only — same concept as BKP)
+# (a) LABOR earnings share = wage + self-employment, BKP's actual income
+# concept. The rebuilt panel carries this directly (female/male_income_labor);
+# previously this line used wage-only because the old extract had no
+# self-employment income. Including it matters: it brings in couples whose
+# earnings are mostly business or farm income, who previously looked like
+# non-earners and were dropped from the interior sample entirely.
+#
+# TWO SAMPLES, deliberately:
+#
+#  z_labor          — INTERIOR only (both spouses earning). This is BKP's
+#                     construction and the one the cliff/ratio statistics need,
+#                     because the share is degenerate for a one-earner couple:
+#                     it sits at exactly 0 or 1 and says nothing about behaviour
+#                     near 0.5.
+#
+#  z_labor_incl_zero — INCLUDES one-earner couples, coding a male-breadwinner
+#                     couple as 0 and a female-breadwinner couple as 1. This is
+#                     the sample OUR question needs. A norm that pushes wives
+#                     out of paid work entirely does not bend the interior
+#                     distribution — it moves mass to zero, which the interior
+#                     sample discards by construction. Restricting to
+#                     both-earner couples therefore conditions on the very
+#                     margin the income-elastic-norm story predicts, and would
+#                     understate the norm exactly where it binds hardest.
 dt[, z_labor := fifelse(
-  female_income_wage_nonneg > 0 & male_income_wage_nonneg > 0,
-  female_income_wage_nonneg / (female_income_wage_nonneg + male_income_wage_nonneg),
+  female_income_labor > 0 & male_income_labor > 0,
+  female_income_labor / (female_income_labor + male_income_labor),
   NA_real_
 )]
+dt[, z_labor_incl_zero := fifelse(
+  (female_income_labor + male_income_labor) > 0,
+  female_income_labor / (female_income_labor + male_income_labor),
+  NA_real_
+)]
+dt[, earner_type := fcase(
+  female_income_labor > 0 & male_income_labor > 0, "dual earner",
+  female_income_labor <= 0 & male_income_labor > 0, "male sole earner",
+  female_income_labor > 0 & male_income_labor <= 0, "female sole earner",
+  default = "neither earning"
+)]
+message("  Earner composition (weighted):")
+print(dt[!is.na(earner_type), .(share = round(sum(HHWT) / dt[, sum(HHWT)], 4)),
+         by = earner_type][order(-share)])
+message("  -> the interior (dual-earner) sample used for the cliff statistics ",
+        "excludes the sole-earner couples above; see z_labor_incl_zero for the ",
+        "extension sample that keeps them.")
 
 # (b) total income share (pollutes the labor-effort signal with transfers/
 # capital by construction — BKP's Canada-LAD robustness check mirrors this)
@@ -120,13 +158,19 @@ dt[, z_total := fifelse(
 # keep only (YEAR, HHWT, z_capital), which is small.
 message("  Pulling supplementary capital-income (INCINVST+INCOTHER) year by year ...")
 con <- dbConnect(SQLite(), sqlite_path)
+year_rowid_ranges <- dbGetQuery(
+  con, "SELECT YEAR, MIN(rowid) AS lo, MAX(rowid) AS hi FROM ipums_table GROUP BY YEAR")
 years_needed <- sort(unique(dt$YEAR))
 
 z_capital_list <- lapply(years_needed, function(yr) {
+  # Sequential rowid-range scan, not an index seek — see the performance note
+  # in ipums-bkp-pure-replication.R (measured ~290x on this database).
+  rr <- year_rowid_ranges[year_rowid_ranges$YEAR == as.integer(yr), ]
   cap <- setDT(dbGetQuery(con, paste0(
     "SELECT SERIAL, PERNUM, ",
     "  MAX(COALESCE(INCINVST,0),0) + MAX(COALESCE(INCOTHER,0),0) AS cap_inc ",
-    "FROM ipums_table WHERE YEAR = ", yr
+    "FROM ipums_table NOT INDEXED WHERE rowid BETWEEN ", rr$lo, " AND ", rr$hi,
+    " AND YEAR = ", yr
   )))
   yr_dt <- dt[YEAR == yr, .(YEAR, SERIAL, HHWT, female_pernum, male_pernum)]
 
@@ -231,15 +275,31 @@ message("  Caveats: division bias (hourly wage built from reported hours), top-c
 print(t2_results)
 fwrite(t2_results, file.path(results_dir, "bkp_augmented_t2_horserace_results.csv"))
 
-p_t2 <- ggplot(t2_dt[female_hourly_wage > 0 & female_hourly_wage < 150 &
-                     male_hourly_wage > 0 & male_hourly_wage < 150],
+# PLOTTING NOTE: geom_smooth(method="loess") does NOT subsample, and LOESS on
+# millions of points is pathologically slow — it ran for over an hour here on
+# 7.5M rows at full CPU. The binning is cheap; the smoother was the problem.
+# Fix: draw the density from a large random subsample (visually identical for a
+# 40x40 hex grid) and overlay a binned conditional mean computed on the FULL
+# data, which is both exact and O(n). Nothing is estimated from the subsample.
+t2_plot_dt <- t2_dt[female_hourly_wage > 0 & female_hourly_wage < 150 &
+                    male_hourly_wage   > 0 & male_hourly_wage   < 150]
+set.seed(42)
+t2_plot_sample <- if (nrow(t2_plot_dt) > 500000L)
+  t2_plot_dt[sample(.N, 500000L)] else t2_plot_dt
+
+t2_trend <- t2_plot_dt[, .(female_weekly_hours = weighted.mean(female_weekly_hours, HHWT, na.rm = TRUE)),
+                       by = .(male_hourly_wage = round(male_hourly_wage))][order(male_hourly_wage)]
+
+p_t2 <- ggplot(t2_plot_sample,
                aes(x = male_hourly_wage, y = female_weekly_hours)) +
   geom_bin2d(bins = 40) +
   scale_fill_viridis_c(name = "N", trans = "log10") +
-  geom_smooth(method = "loess", se = FALSE, color = "red", linewidth = 0.9, formula = y ~ x) +
+  geom_line(data = t2_trend, color = "red", linewidth = 0.9) +
   labs(
     title    = "T2: wife's weekly hours vs. husband's hourly wage",
-    subtitle = "Hourly wage = labor earnings / (weekly hours × weeks worked); positive-hours sample",
+    subtitle = paste0("Hourly wage = labor earnings / (weekly hours x weeks worked); positive-hours sample.\n",
+                      "Density from a 500k random subsample; red line = weighted mean over ALL ",
+                      format(nrow(t2_plot_dt), big.mark = ","), " couples."),
     x = "Husband's hourly wage ($)", y = "Wife's weekly hours"
   ) +
   theme_minimal(base_size = 11)
@@ -271,8 +331,11 @@ if (!file.exists(pairs_file_grp)) {
   has_frontier <- file.exists(frontier_lu_file)
   if (has_frontier) {
     frontier_lu <- fread(frontier_lu_file, select = c("fips", "is_frontier"))
-    frontier_lu[, fips := as.character(fips)]
-    grp_dt[, fips := as.character(fips)]
+    # Same leading-zero hazard as the political merge: fread types these codes
+    # as integer, so as.character() would give "6037" against the panel's
+    # "06037" and silently drop every state numbered 01-09.
+    frontier_lu[, fips := pad_fips(fips)]
+    grp_dt[, fips := pad_fips(fips)]
     grp_dt <- merge(grp_dt, frontier_lu, by = "fips", all.x = TRUE)
   } else {
     message("  ", frontier_lu_file, " not found — T3 will report political stratification only (no frontier).")
@@ -286,7 +349,15 @@ if (!file.exists(pairs_file_grp)) {
   )]
 
   grp_dt[!is.na(political) & !is.na(z_labor),
-         strat_group := if (has_frontier) paste(political, fifelse(is_frontier == 1, "frontier", "non-frontier"))
+         # fifelse(is_frontier == 1, ...) returns NA when is_frontier is NA
+         # (counties absent from the Bazzi lookup), producing labels like
+         # "Republican-majority NA". Those counties have unknown frontier
+         # status, not a known one — label them explicitly so they are visibly
+         # a coverage gap rather than silently mixed into a real category.
+         strat_group := if (has_frontier) paste(political, fcase(
+             is.na(is_frontier), "frontier status unknown",
+             is_frontier == 1,   "frontier",
+             default =           "non-frontier"))
                          else political]
 
   t3_ratios <- rbindlist(lapply(unique(na.omit(grp_dt$strat_group)), function(g) {
