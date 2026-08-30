@@ -91,3 +91,50 @@ deflate_to <- function(x, year, base_year = 2010) {
   if (length(base) != 1L) stop("base_year not in CPI table: ", base_year)
   x * base / idx
 }
+
+# Weeks worked last year, reconciling the two IPUMS encodings.
+#
+# WKSWORK1 (continuous, 0-52) is ABSENT for 2008-2018 and for 1970: the ACS
+# asked a categorical question in those years. WKSWORK2 gives 6 bins instead.
+# Building annual hours from WKSWORK1 alone silently yields ZERO hours for
+# 2008-2018 — which is how the T2 hourly-wage analysis ended up running on
+# 1980/1990/2000/2005-07/2019-24 only, without any error being raised.
+#
+# The bin -> weeks values below are EMPIRICAL means of WKSWORK1 within each
+# WKSWORK2 bin, measured on the 37M overlap-year records where both variables
+# exist (1980-2007, 2019-2024). They are NOT textbook midpoints, which are
+# biased in the two bins that matter most: naive 51 vs true 51.86 for bin 6
+# (67.4% of all workers) and naive 43.5 vs true 42.33 for bin 4.
+#
+# Measured cost of the imputation, on those overlap years:
+#   mean absolute error   = 1.07 weeks
+#   mean |error| in log hourly wage = 3.06%
+# Accuracy is very uneven: bins 5-6 (71% of workers, 48+ weeks) have within-bin
+# SD under 0.5 weeks, so full-year workers are near-exact. The error is
+# concentrated in part-YEAR workers, who are disproportionately the women whose
+# labour supply this project cares about — so treat 3% as an average, not a
+# uniform bound, and flag interval-derived years in any output.
+wkswork2_to_weeks <- function(bin) {
+  map <- c(`1` = 7.35, `2` = 20.97, `3` = 32.98,
+           `4` = 42.33, `5` = 48.21, `6` = 51.86)
+  out <- unname(map[as.character(bin)])
+  out[is.na(out)] <- NA_real_
+  out
+}
+
+# Weeks worked, preferring the continuous measure and falling back to the
+# interval reconstruction. Returns NA where neither is usable.
+weeks_worked <- function(wkswork1, wkswork2) {
+  w1 <- suppressWarnings(as.numeric(wkswork1))
+  w1[!is.finite(w1) | w1 < 1 | w1 > 52] <- NA_real_
+  w2 <- wkswork2_to_weeks(wkswork2)
+  ifelse(!is.na(w1), w1, w2)
+}
+
+# TRUE where weeks had to be reconstructed from the interval variable, so that
+# any result can be re-checked excluding those years.
+weeks_is_imputed <- function(wkswork1, wkswork2) {
+  w1 <- suppressWarnings(as.numeric(wkswork1))
+  bad1 <- !is.finite(w1) | w1 < 1 | w1 > 52
+  bad1 & !is.na(wkswork2_to_weeks(wkswork2))
+}
