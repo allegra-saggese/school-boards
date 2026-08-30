@@ -313,16 +313,16 @@ fwrite(quad_tab, dated_path(results_dir, "t2_quadrant_means.csv"))
 # wealth costume, they collapse once earnings are held roughly fixed here.
 message("\n=== T2.2  QUADRANT WITHIN LABOUR-INCOME DECILE ===")
 
-quad_dec <- quad[!is.na(labinc_decile), .(
+quad_dec <- quad[!is.na(husb_decile), .(
   couples      = .N,
   lfp_pct      = 100 * wmean(f_lfp, f_HHWT),
   weekly_hours = wmean(f_weekly_hours, f_HHWT)
-), by = .(labinc_decile, culture, wealthy)][order(labinc_decile, culture, wealthy)]
+), by = .(husb_decile, culture, wealthy)][order(husb_decile, culture, wealthy)]
 
-dec_gaps <- rbindlist(lapply(sort(unique(quad_dec$labinc_decile)), function(d) {
-  sub <- quad_dec[labinc_decile == d]
+dec_gaps <- rbindlist(lapply(sort(unique(quad_dec$husb_decile)), function(d) {
+  sub <- quad_dec[husb_decile == d]
   if (nrow(sub) < 4L) return(NULL)
-  data.table(labinc_decile = d,
+  data.table(husb_decile = d,
              t(gap(sub, "lfp_pct")),
              weekly_hours_wealth_gap_cons = gap(sub, "weekly_hours")[1],
              weekly_hours_culture_gap_nw  = gap(sub, "weekly_hours")[3])
@@ -396,19 +396,19 @@ save_plot("t2_quadrant_lfp_and_hours.png", {
 }, width = 2200, height = 1200)
 
 save_plot("t2_quadrant_lfp_by_income_decile.png", {
-  pd <- quad_dec[!is.na(labinc_decile)]
+  pd <- quad_dec[!is.na(husb_decile)]
   pd[, quadrant := paste0(culture, " / ", wealthy)]
   print(
-    ggplot(pd, aes(x = labinc_decile, y = lfp_pct, colour = culture, linetype = wealthy)) +
+    ggplot(pd, aes(x = husb_decile, y = lfp_pct, colour = culture, linetype = wealthy)) +
       geom_line(linewidth = 0.9) + geom_point(size = 1.6) +
       scale_x_continuous(breaks = 1:10) +
       scale_colour_manual(values = c(Conservative = "#B2182B", Progressive = "#2166AC")) +
       labs(title = "T2: does the quadrant survive conditioning on earnings?",
-           subtitle = paste0("Wife's LFP by couple labour-income decile (within year), ",
+           subtitle = paste0("Wife's LFP by husband's labour-income decile (within year), ",
                              min(t2_years), "-", max(t2_years),
                              ".\nIf wealth gaps were an income gradient in disguise, the ",
                              "solid/dashed pairs would converge."),
-           x = "Couple labour-income decile (within year)",
+           x = "Husband's labour-income decile (within year)",
            y = "Wife's labour force participation (%)",
            colour = "County lean", linetype = "Asset income") +
       theme_minimal(base_size = 12) +
@@ -448,7 +448,7 @@ print(dec_coefs[, .(husb_decile, term,
                     est_pp = round(100 * estimate, 2),
                     lo_pp  = round(100 * ci_lo, 2),
                     hi_pp  = round(100 * ci_hi, 2),
-                    p = signif(p_value, 2))][order(term, labinc_decile)])
+                    p = signif(p_value, 2))][order(term, husb_decile)])
 
 fwrite(dec_coefs, dated_path(results_dir, "t2_decile_coefficients.csv"))
 
@@ -538,3 +538,196 @@ fwrite(rob_out, dated_path(results_dir, "t2_pooled_robustness.csv"))
 
 message("
 T2 complete. Tables and figures written to ", results_dir, " and data/graphs/.")
+
+# ── 11) THE DONUT KINK RDD, RE-RUN WITH STATE FIXED EFFECTS ─────────────────
+# ipums-rdd-breadwinner-norm.R Section 10 runs this interaction with YEAR fixed
+# effects only. That is not enough here: both the political split and the wealth
+# axis are geographic, so without state FE a "conservative county" coefficient
+# can pick up any way Alabama differs from Massachusetts -- industry mix, cost
+# of living, childcare availability. State FE force a within-state comparison.
+#
+# Two further corrections to the original specification:
+#   * SEs clustered on COUNTY. The political proxy is assigned at county level,
+#     so residuals of couples in the same county are not independent and
+#     unclustered SEs are anticonservative by construction.
+#   * The wealth axis is added. The standalone RDD panel carries no asset
+#     income, so it could never ask whether the kink is a wealth phenomenon.
+#
+# Design (unchanged from the original, so numbers stay comparable):
+#     y ~ (z_c + D + D*z_c) * G   over  donut < |z - 0.5| <= bandwidth
+# z = wife's share of couple LABOUR earnings on the interior (both earning),
+# z_c = z - 0.5, D = 1[z_c >= 0]. Coefficient of interest: D_zc:G, the
+# DIFFERENTIAL kink.
+message("\n=== T2.6  DONUT KINK RDD WITH STATE FE ===")
+
+donut_primary <- 0.02
+rdd_bw        <- 0.20
+
+rdd <- quad[f_labinc > 0 & m_labinc > 0]
+rdd[, z := f_labinc / (f_labinc + m_labinc)]
+rdd <- rdd[!is.na(z) & abs(z - 0.5) > donut_primary & abs(z - 0.5) <= rdd_bw]
+rdd[, z_c  := z - 0.5]
+rdd[, D    := as.integer(z_c >= 0)]
+rdd[, D_zc := D * z_c]
+
+message("  RDD sample (interior, donut-excluded, |z-0.5| <= ", rdd_bw, "): ",
+        format(nrow(rdd), big.mark = ","), " couples")
+
+f_pol   <- "~ (z_c + D + D_zc) * conservative"
+r_yr    <- feols(as.formula(paste("f_weekly_hours", f_pol, "| year_f")),
+                 data = rdd, weights = ~f_HHWT)
+r_yr_cl <- feols(as.formula(paste("f_weekly_hours", f_pol, "| year_f")),
+                 data = rdd, weights = ~f_HHWT, cluster = ~fips)
+r_st    <- feols(as.formula(paste("f_weekly_hours", f_pol, "| year_f + state_f")),
+                 data = rdd, weights = ~f_HHWT, cluster = ~fips)
+
+message("\n(a) Political interaction: what do state FE and clustering change?")
+etable(r_yr, r_yr_cl, r_st,
+       headers = c("year FE (original)", "+ cluster county", "+ STATE FE"),
+       digits = 4)
+
+r_w  <- feols(f_weekly_hours ~ (z_c + D + D_zc) * wealth_bin | year_f + state_f,
+              data = rdd, weights = ~f_HHWT, cluster = ~fips)
+r_wc <- feols(f_weekly_hours ~ (z_c + D + D_zc) * conservative * wealth_bin |
+                year_f + state_f,
+              data = rdd, weights = ~f_HHWT, cluster = ~fips)
+
+message("\n(b) Is the kink a WEALTH phenomenon rather than a cultural one?")
+etable(r_w, r_wc, headers = c("wealth interaction", "culture x wealth"), digits = 4)
+
+rdd_out <- rbindlist(lapply(
+  list("hours: year FE only"        = r_yr,
+       "hours: year FE + clustered" = r_yr_cl,
+       "hours: + state FE"          = r_st,
+       "hours: wealth interaction"  = r_w,
+       "hours: culture x wealth"    = r_wc),
+  function(m) {
+    ct <- as.data.table(coeftable(m), keep.rownames = "term")
+    setnames(ct, c("term", "estimate", "std_error", "t_value", "p_value"))
+    ct
+  }), idcol = "model", fill = TRUE)
+fwrite(rdd_out, dated_path(results_dir, "t2_rdd_state_fe.csv"))
+
+message("\n  Read: D_zc is the kink in the omitted group; each interaction is")
+message("  that group's DIFFERENTIAL kink.")
+message("\nT2 Section 11 complete.")
+
+# ── 12) THE QUADRANT REBUILT ON HOUSING WEALTH ──────────────────────────────
+# The INCINVST axis used above is thin (~15% of couples) and its coverage
+# DECLINES over the sample, so it reads asset-holding with error. Housing is
+# the better instrument for the same latent variable: 70% of households own,
+# 28-32% own free and clear, and VALUEH is a LEVEL rather than a binary.
+#
+# THREE HOUSING MEASURES, because they capture different things:
+#   owns_outright  owning with no mortgage at working age. The cleanest single
+#                  wealth signal in the ACS -- the asset is held free of debt.
+#   wealthy_home   top quartile of house value WITHIN STATE x YEAR. Ranking
+#                  within state is essential: a $250k house is top-decile
+#                  wealth in Mississippi and below-median in California, so a
+#                  national dollar cut would encode geography as wealth --
+#                  and geography is also the culture axis, which would
+#                  manufacture exactly the interaction we are testing for.
+#   wealth_tier    4-level descriptive ladder (renter -> outright owner).
+# Renters are coded NOT wealthy rather than missing: renting at these ages is
+# itself a wealth signal, not an absence of information.
+message("\n=== T2.7  THE QUADRANT ON HOUSING WEALTH ===")
+
+hw <- fread(file.path(panel_dir, "housing_wealth_by_household.csv"))
+quad <- merge(quad, hw, by = c("YEAR", "SAMPLE", "SERIAL"), all.x = TRUE)
+message("  couples matched to housing record: ",
+        format(sum(!is.na(quad$owns)), big.mark = ","),
+        " (", round(100 * mean(!is.na(quad$owns)), 1), "%)")
+
+quad[, home_value_rank := frank(home_value, ties.method = "average", na.last = "keep") / sum(!is.na(home_value)),
+     by = .(state_f, YEAR)]
+quad[, wealthy_home := fifelse(is.na(owns), NA_real_,
+                        fifelse(owns == 1L & !is.na(home_value_rank) & home_value_rank >= 0.75, 1, 0))]
+quad[, outright := as.numeric(owns_outright)]
+quad[, wealth_tier := fcase(
+  is.na(owns),                                   NA_character_,
+  owns == 0L,                                    "1 Renter",
+  owns == 1L & outright %in% 0,                  "2 Owner, mortgaged",
+  owns == 1L & outright %in% 1 & (is.na(home_value_rank) | home_value_rank < 0.75), "3 Owner outright",
+  owns == 1L & outright %in% 1,                  "4 Owner outright, top-quartile value",
+  default = NA_character_)]
+
+message("\nWife's labour supply by housing wealth tier:")
+print(quad[!is.na(wealth_tier), .(
+  couples      = .N,
+  lfp_pct      = round(100 * wmean(f_lfp, f_HHWT), 2),
+  weekly_hours = round(wmean(f_weekly_hours, f_HHWT), 2)
+), by = wealth_tier][order(wealth_tier)])
+
+# decile_f is built on a subset in Section 10; define it on quad for use here.
+quad[, decile_f := factor(husb_decile)]
+
+message("\nThe quadrant, culture x HOUSING wealth (top-quartile house value):")
+qh <- quad[!is.na(culture) & !is.na(wealthy_home)]
+qh_tab <- qh[, .(couples = .N,
+                 lfp_pct      = round(100 * wmean(f_lfp, f_HHWT), 2),
+                 weekly_hours = round(wmean(f_weekly_hours, f_HHWT), 2)),
+             by = .(culture, wealthy_home)][order(culture, wealthy_home)]
+print(qh_tab)
+fwrite(qh_tab, dated_path(results_dir, "t2_quadrant_housing_means.csv"))
+
+# Regressions, same control set and FE as Section 7/10 so they are comparable.
+h1 <- feols(as.formula(paste0("f_lfp ~ conservative * wealthy_home + ", ctrl,
+                              " | state_f + year_f")),
+            data = qh, weights = ~f_HHWT, cluster = ~fips)
+h2 <- feols(as.formula(paste0("f_lfp ~ conservative * wealthy_home + ", ctrl,
+                              " | state_f + year_f + decile_f")),
+            data = qh[!is.na(decile_f)], weights = ~f_HHWT, cluster = ~fips)
+h3 <- feols(as.formula(paste0("f_lfp ~ conservative * outright + ", ctrl,
+                              " | state_f + year_f + decile_f")),
+            data = quad[!is.na(culture) & !is.na(outright) & !is.na(decile_f)],
+            weights = ~f_HHWT, cluster = ~fips)
+h4 <- feols(as.formula(paste0("f_weekly_hours ~ conservative * wealthy_home + ", ctrl,
+                              " | state_f + year_f + decile_f")),
+            data = qh[!is.na(decile_f)], weights = ~f_HHWT, cluster = ~fips)
+
+message("\nHousing-wealth quadrant regressions:")
+etable(h1, h2, h3, h4,
+       headers = c("LFP, top-qtile home", "+ husband-decile FE",
+                   "LFP, owns outright", "Hours, top-qtile home"),
+       keep = c("conservative", "wealthy_home", "outright"), digits = 4)
+
+fwrite(rbindlist(lapply(
+  list("LFP top-quartile home"       = h1,
+       "LFP + husband-decile FE"     = h2,
+       "LFP owns outright"           = h3,
+       "Hours top-quartile home"     = h4),
+  function(m) {
+    ct <- as.data.table(coeftable(m), keep.rownames = "term")
+    setnames(ct, c("term", "estimate", "std_error", "t_value", "p_value"))
+    ct[term %like% "conservative|wealthy_home|outright"]
+  }), idcol = "model"),
+  dated_path(results_dir, "t2_housing_wealth_regressions.csv"))
+
+save_plot("t2_quadrant_housing_wealth.png", {
+  pd <- melt(qh_tab, id.vars = c("culture", "wealthy_home"),
+             measure.vars = c("lfp_pct", "weekly_hours"),
+             variable.name = "outcome", value.name = "value")
+  pd[, outcome := factor(outcome, levels = c("lfp_pct", "weekly_hours"),
+        labels = c("Wife's labour force participation (%)",
+                   "Wife's usual weekly hours (incl. zeros)"))]
+  pd[, wealth_lab := fifelse(wealthy_home == 1,
+                             "Top-quartile home value\n(within state x year)",
+                             "Other")]
+  print(
+    ggplot(pd, aes(x = wealth_lab, y = value, fill = culture)) +
+      geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+      geom_text(aes(label = sprintf("%.1f", value)),
+                position = position_dodge(width = 0.8), vjust = -0.4, size = 3.2) +
+      facet_wrap(~outcome, scales = "free_y") +
+      scale_fill_manual(values = c(Conservative = "#B2182B", Progressive = "#2166AC")) +
+      labs(title = "T2: the quadrant on HOUSING wealth",
+           subtitle = paste0("Married couples, both 18-65, ", min(t2_years), "-", max(t2_years),
+                             ". Wealth = top-quartile house value within state x year",
+                             "\n(70% of households own, vs ~15% reporting any asset income)."),
+           x = NULL, y = NULL, fill = "County lean",
+           caption = "Source: IPUMS USA extract 6 + county presidential returns.") +
+      theme_minimal(base_size = 12) + theme(legend.position = "top")
+  )
+}, width = 2200, height = 1200)
+
+message("\nT2 Section 12 complete.")
