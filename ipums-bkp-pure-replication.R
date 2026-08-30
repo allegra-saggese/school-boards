@@ -18,10 +18,15 @@ source("R/paths.R")
 #     (1970, 1980, 1990, 2000) — BKP's Section 3.1 introduces Figure 2 directly
 #     after Figure 1 with no separate restriction stated, so we carry the same
 #     sample forward.
-#   - Table 2/3: both spouses 18-65, husband employed. Published QJE sample is
-#     "1970 to 2000 U.S. Census and 2008 to 2011 ACS single-year files"
-#     (Tables II/III notes, pp. 593/597) -> 1970,1980,1990,2000,2008-2011.
-#     Our post-publication extension then runs 2012-2024.
+#   - Table 2/3 run on THREE samples, all with the SAME specification:
+#       (a) BKP replication  : 1970,1980,1990,2000 + ACS 2008-2011
+#                              -- the published QJE sample, for replication
+#       (b) Post-BKP only    : ACS 2012-2024
+#                              -- the years published after BKP
+#       (c) UPDATED          : 1970,1980,1990,2000 + ACS 2001-2024
+#                              -- BKP's design run on ALL data now available
+#     (c) is the headline "same analysis, updated data" result; (a) establishes
+#     that the design reproduces before extending it.
 #
 # BENCHMARKS ARE THE PUBLISHED QJE TABLES, NOT THE 2013 NBER WORKING PAPER.
 # The two differ in both specification and coefficients, and an earlier version
@@ -96,7 +101,13 @@ bkp_era_young_years   <- c(2008L, 2009L, 2010L)                    # Figure 1
 bkp_era_decade_years  <- c(1970L, 1980L, 1990L, 2000L)             # Figure 2 (real 2000 decennial)
 bkp_era_table_years   <- c(1970L, 1980L, 1990L, 2000L, 2008L, 2009L, 2010L, 2011L)  # Table 2/3 (published: 1970-2000 Census + ACS 2008-2011 single-year)
 extension_young_years <- c(2022L, 2023L, 2024L)                    # 10-years-on Figure 1
-extension_table_years <- 2012L:2024L                               # 10-years-on Table 2/3
+extension_table_years <- 2012L:2024L                               # post-BKP window only
+# THE SAME SPECIFICATION ON ALL AVAILABLE DATA. This is the point of the
+# exercise alongside the pure replication: BKP's design, unchanged, run on
+# everything IPUMS now has (their census decades plus EVERY ACS year through
+# 2024) rather than only their 1970-2011 window. Not a different model, not a
+# different sample definition -- the same regression with more years.
+full_table_years      <- c(1970L, 1980L, 1990L, 2000L, 2001L:2024L)
 
 min_cell_n <- 30L   # minimum weighted-N to trust a demographic-cell wage percentile
 
@@ -749,9 +760,14 @@ p_fig1_compare <- ggplot(fig1_compare, aes(x = bin_mid, y = share, color = era))
 
 save_plot("bkp_pure_figure1_era_comparison.png", { print(p_fig1_compare) }, width = 1800, height = 1200)
 
-table23_extension <- run_table2_table3(extension_table_years, "Post-BKP (2011-2024)")
+table23_extension <- run_table2_table3(extension_table_years, "Post-BKP only (2012-2024)")
 
-era_comparison <- rbindlist(list(table23_bkp_era$results, table23_extension$results))
+# BKP's exact specification, run on all available data 1970-2024.
+table23_full <- run_table2_table3(full_table_years, "UPDATED: same spec, 1970-2024")
+
+era_comparison <- rbindlist(list(table23_bkp_era$results,
+                                table23_extension$results,
+                                table23_full$results))
 message("\nPrWifeEarnsMore coefficient (beta1), BKP era vs. 10-years-on:")
 print(era_comparison)
 

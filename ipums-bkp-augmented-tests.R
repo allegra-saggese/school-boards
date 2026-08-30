@@ -1,3 +1,17 @@
+# -----------------------------------------------------------------------------
+# NAMING — read this before using "T1/T2/T3" anywhere near this project.
+#
+# At PROJECT level the three parts are:
+#     T1 = the BKP replication            (ipums-bkp-pure-replication.R + this file)
+#     T2 = the empirical culture x wealth quadrant (ipums-t2-empirical-quadrant.R)
+#     T3 = the theoretical household utility model
+#
+# The decompositions in THIS file are supporting evidence inside T1. They were
+# once also called T1/T2/T3, which collided with the project-level names and
+# caused real confusion; they are A/B/C here now. Do not reintroduce T-labels
+# in this file.
+# -----------------------------------------------------------------------------
+
 library(data.table)
 library(ggplot2)
 library(DBI)
@@ -7,7 +21,7 @@ source("functions.R")
 source("R/paths.R")
 
 # =========================================================
-# BKP augmented tests (T1-T3)
+# BKP replication: supporting decompositions (A-C)
 #
 # Second track of the BKP replication update: not a closer copy of BKP's
 # figures, but a set of tests aimed at (a) economic mechanisms behind the 0.5
@@ -24,21 +38,21 @@ source("R/paths.R")
 # and frontier merges) rather than rebuilding a BKP-specific sample — T1-T3 are
 # meant to extend "our design," not replicate BKP's.
 #
-# T1 — income-share decomposition: wife's share of (a) labor earnings,
+# A — income-share decomposition: wife's share of (a) labor earnings,
 #   (b) total income, (c) capital/non-labor income. If the cliff is about
 #   effort/market-work (identity norm) rather than total household resources,
 #   it should be sharp in (a), attenuated in (b), and absent in (c) — a direct
 #   test against Binder & Lam, who can't distinguish these three shares under
 #   an assortative-matching-only story.
 #
-# T2 — hourly-wage decomposition: horse-race the husband's hourly wage rate
+# B — hourly-wage decomposition: horse-race the husband's hourly wage rate
 #   (his "market price," harder to game by working fewer hours) against his
 #   total income (easier for either spouse to distort/misreport) as predictors
 #   of the wife's labor supply. If the identity threat is about the wife's
 #   income exceeding a stable measure of the husband's earning power (not just
 #   noisy reported income), the hourly-wage version should do more work.
 #
-# T3 — cultural/income-elastic heterogeneity: stratify T1/T2 by county
+# C — cultural/income-elastic heterogeneity: stratify A/B by county
 #   political lean and frontier-culture status (Bazzi et al.), reusing the
 #   existing political-group and frontier merges.
 #
@@ -50,7 +64,7 @@ source("R/paths.R")
 # ── 0) Config (matches ipums-rdd-breadwinner-norm.R) ──────────────────────
 donut_primary <- 0.02
 rdd_bw        <- 0.20
-t3_years      <- 2010:2020   # window with political-group + frontier coverage
+c_years      <- 2010:2020   # window with political-group + frontier coverage
 
 panel_dir   <- data_path("processed", "panel")
 results_dir <- data_path("processed", "results")
@@ -92,7 +106,7 @@ dt <- fread(
 
 # ── 2) T1: three-way income-share decomposition ────────────────────────────
 
-message("T1: building three-way income-share decomposition ...")
+message("A: building three-way income-share decomposition ...")
 
 # (a) LABOR earnings share = wage + self-employment, BKP's actual income
 # concept. The rebuilt panel carries this directly (female/male_income_labor);
@@ -196,23 +210,23 @@ message("  Capital-income interior N: ", nrow(z_capital_dt),
         " (small/noisy — capital income has no wealth-stock denominator in ACS; ",
         "directional evidence only, per plan caveat)")
 
-t1_long <- rbindlist(list(
+a_long <- rbindlist(list(
   dt[!is.na(z_labor), .(YEAR, HHWT, z = z_labor, measure = "(a) Labor earnings")],
   dt[!is.na(z_total), .(YEAR, HHWT, z = z_total, measure = "(b) Total income")],
   z_capital_dt[, .(YEAR, HHWT, z = z_capital, measure = "(c) Capital/non-labor income")]
 ))
-t1_long[, z_bin := round(z * 100) / 100]
+a_long[, z_bin := round(z * 100) / 100]
 
-t1_density <- t1_long[, .(wt = sum(HHWT)), by = .(measure, z_bin)]
-t1_density[, share := wt / sum(wt), by = measure]
+a_density <- a_long[, .(wt = sum(HHWT)), by = .(measure, z_bin)]
+a_density[, share := wt / sum(wt), by = measure]
 
-p_t1 <- ggplot(t1_density[z_bin > 0.05 & z_bin < 0.95],
+p_t1 <- ggplot(a_density[z_bin > 0.05 & z_bin < 0.95],
                aes(x = z_bin, y = share * 100)) +
   geom_col(width = 0.009, fill = "steelblue4", alpha = 0.85) +
   geom_vline(xintercept = 0.5, color = "red", linewidth = 0.8, linetype = "dashed") +
   facet_wrap(~measure, ncol = 3) +
   labs(
-    title    = "T1: does the 0.5 cliff survive broadening the income concept?",
+    title    = "A: does the 0.5 cliff survive broadening the income concept?",
     subtitle = paste0(
       "Prediction: sharp cliff in (a) labor earnings, attenuated in (b) total income, ",
       "absent in (c) capital income.\n",
@@ -223,57 +237,57 @@ p_t1 <- ggplot(t1_density[z_bin > 0.05 & z_bin < 0.95],
   ) +
   theme_minimal(base_size = 11) +
   theme(strip.text = element_text(face = "bold"))
-save_plot("bkp_augmented_t1_income_share_decomposition.png", { print(p_t1) }, width = 2400, height = 1000)
+save_plot("bkp_augmented_a_income_share_decomposition.png", { print(p_t1) }, width = 2400, height = 1000)
 
-t1_ratios <- rbindlist(lapply(c("(a) Labor earnings", "(b) Total income", "(c) Capital/non-labor income"),
+a_ratios <- rbindlist(lapply(c("(a) Labor earnings", "(b) Total income", "(c) Capital/non-labor income"),
   function(m) {
-    r <- below_above_ratio(t1_long[measure == m], "z", "HHWT")
+    r <- below_above_ratio(a_long[measure == m], "z", "HHWT")
     r[, measure := m]
     r
   }
 ))
-message("T1 below/above ratios by income concept (donut-excluded [0.40,0.48) vs (0.52,0.60]):")
-print(t1_ratios[, .(measure, below_share = round(below_share, 4),
+message("A below/above ratios by income concept (donut-excluded [0.40,0.48) vs (0.52,0.60]):")
+print(a_ratios[, .(measure, below_share = round(below_share, 4),
                      above_share = round(above_share, 4), ratio = round(ratio, 3))])
-fwrite(t1_ratios, file.path(results_dir, "bkp_augmented_t1_ratios.csv"))
+fwrite(a_ratios, file.path(results_dir, "bkp_augmented_a_ratios.csv"))
 
 # ── 3) T2: hourly-wage decomposition, horse race vs. total income ──────────
 
-message("T2: hourly-wage decomposition ...")
+message("B: hourly-wage decomposition ...")
 
 dt[, female_hourly_wage := fifelse(female_annual_hours > 0,
                                     female_income_wage_nonneg / female_annual_hours, NA_real_)]
 dt[, male_hourly_wage   := fifelse(male_annual_hours > 0,
                                     male_income_wage_nonneg / male_annual_hours, NA_real_)]
 
-t2_dt <- dt[
+b_dt <- dt[
   !is.na(male_hourly_wage) & male_hourly_wage > 0 &
   !is.na(male_income_total_nonneg) & male_income_total_nonneg > 0 &
   !is.na(female_weekly_hours)
 ]
-t2_dt[, ln_husb_hourly := log(male_hourly_wage)]
-t2_dt[, ln_husb_total  := log(male_income_total_nonneg)]
-t2_dt[, year_f := factor(YEAR)]
+b_dt[, ln_husb_hourly := log(male_hourly_wage)]
+b_dt[, ln_husb_total  := log(male_income_total_nonneg)]
+b_dt[, year_f := factor(YEAR)]
 
 # Horse race: both measures in the same model. If the hourly wage is the more
 # stable "threat" object, its coefficient should be larger/more robust than
 # the noisier total-income measure once both compete for the same variation.
 fit_horserace <- lm(
   female_weekly_hours ~ ln_husb_hourly + ln_husb_total + year_f,
-  data = t2_dt, weights = HHWT
+  data = b_dt, weights = HHWT
 )
 s <- summary(fit_horserace)$coefficients
-t2_results <- data.table(
+b_results <- data.table(
   term     = c("ln(husband hourly wage)", "ln(husband total income)"),
   estimate = round(s[c("ln_husb_hourly", "ln_husb_total"), "Estimate"], 4),
   se       = round(s[c("ln_husb_hourly", "ln_husb_total"), "Std. Error"], 4),
   p_value  = round(s[c("ln_husb_hourly", "ln_husb_total"), "Pr(>|t|)"], 4),
   n_obs    = nobs(fit_horserace)
 )
-message("T2 horse race — wife weekly hours ~ ln(husband hourly wage) + ln(husband total income) + year FE:")
+message("B horse race — wife weekly hours ~ ln(husband hourly wage) + ln(husband total income) + year FE:")
 message("  Caveats: division bias (hourly wage built from reported hours), top-coding, noisy self-employment hours.")
-print(t2_results)
-fwrite(t2_results, file.path(results_dir, "bkp_augmented_t2_horserace_results.csv"))
+print(b_results)
+fwrite(b_results, file.path(results_dir, "bkp_augmented_b_horserace_results.csv"))
 
 # PLOTTING NOTE: geom_smooth(method="loess") does NOT subsample, and LOESS on
 # millions of points is pathologically slow — it ran for over an hour here on
@@ -281,33 +295,33 @@ fwrite(t2_results, file.path(results_dir, "bkp_augmented_t2_horserace_results.cs
 # Fix: draw the density from a large random subsample (visually identical for a
 # 40x40 hex grid) and overlay a binned conditional mean computed on the FULL
 # data, which is both exact and O(n). Nothing is estimated from the subsample.
-t2_plot_dt <- t2_dt[female_hourly_wage > 0 & female_hourly_wage < 150 &
+b_plot_dt <- b_dt[female_hourly_wage > 0 & female_hourly_wage < 150 &
                     male_hourly_wage   > 0 & male_hourly_wage   < 150]
 set.seed(42)
-t2_plot_sample <- if (nrow(t2_plot_dt) > 500000L)
-  t2_plot_dt[sample(.N, 500000L)] else t2_plot_dt
+b_plot_sample <- if (nrow(b_plot_dt) > 500000L)
+  b_plot_dt[sample(.N, 500000L)] else b_plot_dt
 
-t2_trend <- t2_plot_dt[, .(female_weekly_hours = weighted.mean(female_weekly_hours, HHWT, na.rm = TRUE)),
+b_trend <- b_plot_dt[, .(female_weekly_hours = weighted.mean(female_weekly_hours, HHWT, na.rm = TRUE)),
                        by = .(male_hourly_wage = round(male_hourly_wage))][order(male_hourly_wage)]
 
-p_t2 <- ggplot(t2_plot_sample,
+p_t2 <- ggplot(b_plot_sample,
                aes(x = male_hourly_wage, y = female_weekly_hours)) +
   geom_bin2d(bins = 40) +
   scale_fill_viridis_c(name = "N", trans = "log10") +
-  geom_line(data = t2_trend, color = "red", linewidth = 0.9) +
+  geom_line(data = b_trend, color = "red", linewidth = 0.9) +
   labs(
-    title    = "T2: wife's weekly hours vs. husband's hourly wage",
+    title    = "B: wife's weekly hours vs. husband's hourly wage",
     subtitle = paste0("Hourly wage = labor earnings / (weekly hours x weeks worked); positive-hours sample.\n",
                       "Density from a 500k random subsample; red line = weighted mean over ALL ",
-                      format(nrow(t2_plot_dt), big.mark = ","), " couples."),
+                      format(nrow(b_plot_dt), big.mark = ","), " couples."),
     x = "Husband's hourly wage ($)", y = "Wife's weekly hours"
   ) +
   theme_minimal(base_size = 11)
-save_plot("bkp_augmented_t2_hourly_wage_scatter.png", { print(p_t2) }, width = 1800, height = 1200)
+save_plot("bkp_augmented_b_hourly_wage_scatter.png", { print(p_t2) }, width = 1800, height = 1200)
 
-# ── 4) T3: stratify T1/T2 by political lean and frontier status ────────────
+# ── 4) T3: stratify A/B by political lean and frontier status ────────────
 
-message("T3: cultural/income-elastic heterogeneity ...")
+message("C: cultural/income-elastic heterogeneity ...")
 
 pairs_file_grp <- file.path(panel_dir, "ipums_married_oppositesex_spouse_pairs_with_groups.csv")
 if (!file.exists(pairs_file_grp)) {
@@ -320,7 +334,7 @@ if (!file.exists(pairs_file_grp)) {
                 "male_income_total_nonneg")
   avail <- names(fread(pairs_file_grp, nrows = 0))
   grp_dt <- fread(pairs_file_grp, select = intersect(cols_grp, avail), showProgress = FALSE)
-  grp_dt <- grp_dt[YEAR %in% t3_years & !is.na(vote_margin)]
+  grp_dt <- grp_dt[YEAR %in% c_years & !is.na(vote_margin)]
   grp_dt[, political := fcase(
     vote_margin >  0.05, "Democratic-majority",
     vote_margin < -0.05, "Republican-majority",
@@ -360,37 +374,37 @@ if (!file.exists(pairs_file_grp)) {
              default =           "non-frontier"))
                          else political]
 
-  t3_ratios <- rbindlist(lapply(unique(na.omit(grp_dt$strat_group)), function(g) {
+  c_ratios <- rbindlist(lapply(unique(na.omit(grp_dt$strat_group)), function(g) {
     sub <- grp_dt[strat_group == g & !is.na(z_labor)]
     r <- below_above_ratio(sub, "z_labor", "HHWT")
     r[, group := g]
     r[, n_obs := nrow(sub)]
     r
   }))
-  message("T3: T1(a) labor-share below/above ratio by political × frontier group:")
-  print(t3_ratios[, .(group, ratio = round(ratio, 3), n_obs)])
-  fwrite(t3_ratios, file.path(results_dir, "bkp_augmented_t3_ratios_by_group.csv"))
+  message("C: T1(a) labor-share below/above ratio by political × frontier group:")
+  print(c_ratios[, .(group, ratio = round(ratio, 3), n_obs)])
+  fwrite(c_ratios, file.path(results_dir, "bkp_augmented_c_ratios_by_group.csv"))
 
-  # T2's hourly-wage horse race is NOT re-stratified here: the with_groups
+  # B's hourly-wage horse race is NOT re-stratified here: the with_groups
   # panel doesn't carry male_annual_hours (only the base with_kids panel does),
   # so a correct male_hourly_wage can't be built on this file. T3 reports the
   # T1 density/ratio stratification only — see claude/future-extensions.md for
   # the follow-up (add male_annual_hours to the with_groups panel).
-  message("  Note: T3 stratifies T1 (income-share cliff) by political × frontier group only. ",
-          "T2's hourly-wage horse race is not re-stratified here (with_groups panel lacks ",
+  message("  Note: C stratifies A (income-share cliff) by political × frontier group only. ",
+          "B's hourly-wage horse race is not re-stratified here (with_groups panel lacks ",
           "male_annual_hours) — see claude/future-extensions.md.")
 
-  p_t3 <- ggplot(t3_ratios, aes(x = reorder(group, ratio), y = ratio)) +
+  p_t3 <- ggplot(c_ratios, aes(x = reorder(group, ratio), y = ratio)) +
     geom_col(fill = "steelblue4", alpha = 0.85) +
     geom_hline(yintercept = 1, linetype = "dashed", color = "grey40") +
     coord_flip() +
     labs(
-      title    = "T3: labor-income-share below/above ratio by political × frontier group",
+      title    = "C: labor-income-share below/above ratio by political × frontier group",
       subtitle = "Higher ratio = more couples bunched just below the 0.5 threshold (stronger avoidance)",
       x = NULL, y = "Below / above ratio"
     ) +
     theme_minimal(base_size = 11)
-  save_plot("bkp_augmented_t3_ratio_by_group.png", { print(p_t3) }, width = 1800, height = 1100)
+  save_plot("bkp_augmented_c_ratio_by_group.png", { print(p_t3) }, width = 1800, height = 1100)
 }
 
 message("\nBKP augmented tests complete.")

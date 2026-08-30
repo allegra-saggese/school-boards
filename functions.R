@@ -138,3 +138,33 @@ weeks_is_imputed <- function(wkswork1, wkswork2) {
   bad1 <- !is.finite(w1) | w1 < 1 | w1 > 52
   bad1 & !is.na(wkswork2_to_weeks(wkswork2))
 }
+
+# STATEICP -> state FIPS crosswalk. Lives here because both the RDD script and
+# the T2 quadrant script need it to build county FIPS keys; keeping one copy
+# avoids the two drifting apart.
+stateicp_fips_xwalk <- function() {
+  data.table::data.table(
+    STATEICP   = c(1,2,3,4,5,6,11,12,13,14,21,22,23,24,25,
+                   31,32,33,34,35,36,37,40,41,42,43,44,45,46,47,48,49,
+                   51,52,53,54,56,61,62,63,64,65,66,67,68,71,72,73,81,82,98),
+    state_fips = c(9,23,25,33,44,50,10,34,36,42,17,18,26,39,55,
+                   19,20,27,29,31,38,46,51,1,5,12,13,22,28,37,45,48,
+                   21,24,40,47,54,4,8,16,30,32,35,49,56,6,41,53,2,15,11)
+  )
+}
+
+# County FIPS from IPUMS STATEICP + COUNTYICP. COUNTYICP carries a trailing
+# digit that must be divided out before zero-padding to the 3-digit county part.
+# Returns NA where the state is unmatched or the county is unidentified (0).
+build_county_fips <- function(stateicp, countyicp) {
+  st <- as.integer(stateicp)
+  co <- as.integer(countyicp)
+  xw <- stateicp_fips_xwalk()
+  # match() rather than merge(): a join would risk silently reordering rows
+  # relative to the caller's data, which is unrecoverable once assigned back.
+  sf <- xw$state_fips[match(st, xw$STATEICP)]
+  ok <- !is.na(sf) & !is.na(co) & co > 0
+  out <- rep(NA_character_, length(st))
+  out[ok] <- sprintf("%02d%03d", sf[ok], as.integer(floor(co[ok] / 10)))
+  out
+}
