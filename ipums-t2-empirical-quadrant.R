@@ -1,61 +1,72 @@
 # =============================================================================
-# T2 — EMPIRICAL: the culture x wealth quadrant
+# T2 -- EMPIRICAL: the culture x wealth quadrant
 #
 # PART 2 of three. T1 is the BKP replication (ipums-bkp-pure-replication.R);
-# T3 is the theoretical household utility model. This script is T2 and is
-# EXPLORATORY by design: it does not identify a causal effect, it asks whether
-# a norm is visible in the data at all, and if so, whether that norm is elastic
-# to WEALTH or to CULTURE.
+# T3 is the theoretical household utility model. T2 is EXPLORATORY by design:
+# it does not identify a causal effect. It asks whether a breadwinner norm is
+# visible at all, and if so whether its strength is elastic to WEALTH or to
+# CULTURE.
 #
-# DESIGN — sort married couples into a 2x2 and compare the wife's labour supply
-# across the four cells:
+# DESIGN -- sort married couples into a 2x2 and compare the wife's labour
+# supply across the four cells:
 #
 #                        not wealthy          wealthy
 #     conservative   |  cons / poor      |  cons / wealthy  |
 #     progressive    |  prog / poor      |  prog / wealthy  |
 #
-# on two margins, because a norm can bind on either and they need not agree:
-#     (1) EXTENSIVE — does she participate at all (LFP)
-#     (2) INTENSIVE — given the choice set, how many hours
+# on two margins, because a norm can bind on either:
+#     EXTENSIVE -- does she participate at all (LFP)
+#     INTENSIVE -- given participation, how many hours
 #
-# PROXIES (both are proxies; neither is the thing itself — see LIMITATIONS)
-#   culture : county presidential vote margin, Republican- vs Democratic-majority
-#   wealth  : the couple's ASSET income (INCINVST — interest, dividends, rent)
+# PROXIES
+#   culture : county presidential vote margin (Republican- vs Democratic-majority)
+#   wealth  : HOUSING -- house value, and ownership free of a mortgage
 #
-# WHY ASSET INCOME FOR WEALTH, AND THE ONE THING THIS SCRIPT MUST NOT DO
-#   Asset income is a flow thrown off by a stock, so it proxies assets while
-#   containing no labour earnings by construction. That matters because the
-#   whole point of the wealth axis is to be something OTHER than the husband's
-#   pay-cheque. If "wealthy" were defined on total or labour income, the
-#   quadrant would silently re-measure the income gradient T1 already
-#   estimated, and any "wealth elasticity" we reported would be circular.
-#   Two guards against that:
-#     (a) the wealth axis excludes labour earnings by construction, and
-#     (b) EVERY quadrant statistic is ALSO computed WITHIN labour-income
-#         decile (Section 6), which holds earnings roughly fixed and leaves
-#         only the asset variation. If the quadrant gaps survive (b), they are
-#         about wealth. If they collapse, they were about income all along.
-#         This comparison is the main result of the script.
+# WHY HOUSING IS THE WEALTH AXIS
+# An earlier version used reported asset income (INCINVST). That proxy is weak
+# and getting weaker: positive for 23.9% of adults in 1980 but only 8-9% by
+# 2022, which is reporting decay plus the migration of assets into tax-deferred
+# accounts that pay no RECEIVED dividend. Housing replaces it because home
+# equity is the median US household's dominant asset, ownership is reported for
+# ~70% of households, and VALUEH is a LEVEL rather than a binary "reports
+# something". INCINVST is retained in Section 6 as ONE robustness row only.
 #
-# LIMITATIONS — stated here because they bound what T2 can support
-#   * Asset income is positive for only ~15% of couples in this window and its
-#     reported incidence FALLS over time (23.9% of adults in 1980 -> 8-9% by
-#     2022), almost certainly reporting decay plus the migration of assets into
-#     tax-deferred accounts that pay no received dividend. So "wealthy" here
-#     means "reports asset income," which is a noisy, downward-biased
-#     indicator of holding assets. Housing wealth (VALUEH/OWNERSHP), the
-#     median household's dominant asset, is NOT in extract #4 and would be the
-#     better axis; it needs a supplementary extract.
-#   * County vote margin is a CONTEXTUAL measure. It is the politics of the
-#     place, not of the couple, so cell assignment is measured with error and
-#     any culture gap is attenuated toward zero. It also cannot separate
-#     ideology from everything else that varies across counties (industry mix,
-#     urbanisation, cost of living); Section 5's state fixed effects absorb
-#     the coarsest version of that, nothing absorbs the rest.
-#   * County is identified for only ~61% of ACS households, and the missing
-#     share is systematically small and rural.
-#   * Repeated cross-sections. No couple is observed twice; nothing here is a
-#     within-couple change.
+# Housing also separates two things the income proxy blended together, which
+# turned out to matter more than the coverage gain:
+#   LEVERAGE -- an expensive house carries a mortgage payment, which REQUIRES
+#               a second income. Pushes her INTO the labour force.
+#   WEALTH   -- owning free and clear needs no debt service. Lets her OUT.
+# These have opposite signs. Averaging them is why the asset-income main effect
+# came out an uninformative null.
+#
+# THE ONE THING THIS SCRIPT MUST NOT DO
+# The wealth axis must be something other than the husband's pay-cheque, or the
+# quadrant silently re-measures the income gradient T1 already estimated. Two
+# guards:
+#   (a) house value is ranked WITHIN STATE x YEAR. A national dollar cut would
+#       encode geography as wealth -- and geography is also the culture axis,
+#       which would manufacture exactly the interaction being tested for.
+#   (b) every regression conditions on the HUSBAND's labour-income decile, never
+#       the couple's. Couple labour income contains HER earnings, so ranking on
+#       it conditions on the dependent variable: a non-working wife falls into a
+#       lower decile by construction. Section 6 keeps that contaminated
+#       specification side by side so the size of the bad-control bias stays
+#       visible rather than hidden.
+#
+# LIMITATIONS
+#   * County vote margin is CONTEXTUAL -- the politics of the place, not of the
+#     couple. Cell assignment is measured with error, so every culture estimate
+#     is attenuated toward zero. It also cannot separate ideology from anything
+#     else varying across counties; state FE absorb the coarsest version.
+#   * County is identified for only ~61% of ACS households, skewed large/urban.
+#   * Repeated cross-sections. No couple is observed twice.
+#   * Wealth and labour supply are a JOINT household choice. Nothing here is a
+#     causal estimate.
+#   * Housing data (extract usa:6) covers 2012-2020, matching the political
+#     window that already bounds T2.
+#
+# NOTE ON SCOPE: the Bazzi et al. frontier-culture measure has been removed from
+# this analysis and from the project. Do not reintroduce it here.
 # =============================================================================
 
 library(data.table)
@@ -68,10 +79,11 @@ source("functions.R")
 source("R/paths.R")
 
 # ── 0) Config ────────────────────────────────────────────────────────────────
-# Window is set by the political data, which covers 2012-2020 only.
-t2_years    <- 2012:2020
-age_lo      <- 18L
-age_hi      <- 65L
+t2_years <- 2012:2020     # bounded by county presidential vote data
+age_lo   <- 18L
+age_hi   <- 65L
+donut_primary <- 0.02     # matches ipums-rdd-breadwinner-norm.R
+rdd_bw        <- 0.20
 
 panel_dir   <- data_path("processed", "panel")
 results_dir <- data_path("processed", "results")
@@ -79,8 +91,8 @@ ensure_dir(results_dir)
 sqlite_path <- data_path("interim", "ipums_bkp.sqlite")
 
 # ── 1) Helpers ───────────────────────────────────────────────────────────────
-# IPUMS codes "not applicable"/"missing" as large sentinels rather than NA.
-# Left in place they would be summed as if they were dollars.
+# IPUMS codes "not applicable"/"missing" as large sentinels, not NA. Left in
+# place they would be summed as if they were dollars.
 nas <- function(x, cut = 999990) {
   x <- as.numeric(x)
   fifelse(is.na(x) | x >= cut, NA_real_, x)
@@ -101,11 +113,8 @@ wmean <- function(x, w) {
   sum(x[ok] * w[ok]) / sum(w[ok])
 }
 
-# ── 2) Pull the couples ──────────────────────────────────────────────────────
-# NOT INDEXED is deliberate. The only index on this table is (AGE, SEX); with
-# an AGE predicate SQLite will otherwise pick it and turn a scan into ~10^8
-# index seeks, which measured 290x slower on this database.
-cache_path <- Sys.getenv("T2_CACHE_WRITE", file.path(tempdir(), "t2_quad_sample.rds"))
+cache_path <- Sys.getenv("T2_CACHE_WRITE",
+                         file.path(tempdir(), "t2_quad_sample.rds"))
 cache_env  <- Sys.getenv("T2_CACHE", "")
 use_cache  <- nzchar(cache_env) && file.exists(cache_env)
 
@@ -113,6 +122,11 @@ if (use_cache) {
   message("Reusing cached T2 sample: ", cache_env)
   quad <- readRDS(cache_env)
 } else {
+
+# ── 2) Pull the couples ──────────────────────────────────────────────────────
+# NOT INDEXED is deliberate. The only index on this table is (AGE, SEX); with an
+# AGE predicate SQLite otherwise picks it and turns a scan into ~10^8 index
+# seeks, which measured 290x slower on this database.
 message("Pulling ", min(t2_years), "-", max(t2_years), " spouse-linked adults ...")
 
 con <- dbConnect(SQLite(), sqlite_path)
@@ -122,8 +136,7 @@ persons <- setDT(dbGetQuery(con, sprintf("
   SELECT YEAR, SAMPLE, SERIAL, PERNUM, SPLOC, SEX, AGE, STATEICP, COUNTYICP,
          HHWT, EDUC, RACE, HISPAN, NCHILD, LABFORCE, EMPSTAT,
          UHRSWORK, WKSWORK1,
-         INCWAGE, INCBUS, INCBUS00, INCFARM, INCTOT,
-         INCINVST, INCRETIR, INCOTHER
+         INCWAGE, INCBUS, INCBUS00, INCFARM, INCTOT, INCINVST
   FROM ipums_table NOT INDEXED
   WHERE YEAR BETWEEN %d AND %d
     AND AGE BETWEEN %d AND %d
@@ -131,39 +144,33 @@ persons <- setDT(dbGetQuery(con, sprintf("
     AND COUNTYICP > 0",
   min(t2_years), max(t2_years), age_lo, age_hi)))
 
-message("  spouse-linked adults 18-65 with county: ", format(nrow(persons), big.mark = ","))
+message("  spouse-linked adults ", age_lo, "-", age_hi, " with county: ",
+        format(nrow(persons), big.mark = ","))
 
 # ── 3) Build opposite-sex couples on a MUTUAL spouse link ────────────────────
-# SPLOC holds the PERNUM of the spouse. Requiring the link to point back
-# (m.PERNUM == f.SPLOC AND m.SPLOC == f.PERNUM) drops the one-directional
-# links that arise in complex households.
+# SPLOC holds the spouse's PERNUM. Requiring the link to point back
+# (m.PERNUM == f.SPLOC AND m.SPLOC == f.PERNUM) drops the one-directional links
+# that arise in complex households.
 wives    <- persons[SEX == 2L]
 husbands <- persons[SEX == 1L]
-
-setnames(wives,    setdiff(names(wives),    c("YEAR","SAMPLE","SERIAL")),
-         paste0("f_", setdiff(names(wives),    c("YEAR","SAMPLE","SERIAL"))))
-setnames(husbands, setdiff(names(husbands), c("YEAR","SAMPLE","SERIAL")),
-         paste0("m_", setdiff(names(husbands), c("YEAR","SAMPLE","SERIAL"))))
+idc <- c("YEAR", "SAMPLE", "SERIAL")
+setnames(wives,    setdiff(names(wives),    idc), paste0("f_", setdiff(names(wives),    idc)))
+setnames(husbands, setdiff(names(husbands), idc), paste0("m_", setdiff(names(husbands), idc)))
 
 pairs <- merge(wives, husbands,
-               by.x = c("YEAR","SAMPLE","SERIAL","f_SPLOC"),
-               by.y = c("YEAR","SAMPLE","SERIAL","m_PERNUM"),
-               all = FALSE)
+               by.x = c(idc, "f_SPLOC"), by.y = c(idc, "m_PERNUM"), all = FALSE)
 setnames(pairs, "f_SPLOC", "m_PERNUM")
-pairs <- pairs[m_SPLOC == f_PERNUM]           # mutual link only
+pairs <- pairs[m_SPLOC == f_PERNUM]
 rm(persons, wives, husbands); invisible(gc())
-
 message("  mutually-linked opposite-sex couples: ", format(nrow(pairs), big.mark = ","))
 
 # ── 4) Variables ─────────────────────────────────────────────────────────────
-# 4a. Labour supply — the two outcome margins.
+# 4a. Labour supply -- the two outcome margins.
 # LABFORCE: 1 = not in labour force, 2 = in labour force.
 pairs[, f_lfp := fifelse(f_LABFORCE %in% c(1L, 2L), as.numeric(f_LABFORCE == 2L), NA_real_)]
-# UHRSWORK/WKSWORK1 use 0 as "not applicable", which for a non-worker is a
-# true zero of hours. Zeroes are kept in the unconditional hours measure and
-# excluded from the conditional one.
-pairs[, f_weekly_hours := fifelse(is.na(f_UHRSWORK), NA_real_, as.numeric(f_UHRSWORK))]
-pairs[, f_annual_hours := f_weekly_hours * fifelse(is.na(f_WKSWORK1), NA_real_, as.numeric(f_WKSWORK1))]
+# UHRSWORK uses 0 as "not applicable", which for a non-worker is a true zero of
+# hours. Zeros stay in the unconditional measure, out of the conditional one.
+pairs[, f_weekly_hours     := fifelse(is.na(f_UHRSWORK), NA_real_, as.numeric(f_UHRSWORK))]
 pairs[, f_hours_if_working := fifelse(f_weekly_hours > 0, f_weekly_hours, NA_real_)]
 
 # 4b. Earnings.
@@ -171,31 +178,13 @@ pairs[, f_labinc := labor_income(f_INCWAGE, f_INCBUS, f_INCFARM, f_INCBUS00)]
 pairs[, m_labinc := labor_income(m_INCWAGE, m_INCBUS, m_INCFARM, m_INCBUS00)]
 pairs[, couple_labinc := f_labinc + m_labinc]
 
-# 4c. WEALTH AXIS — couple asset income. Contains no labour earnings.
-pairs[, f_assetinc := pmax(nas(f_INCINVST), 0)]
-pairs[, m_assetinc := pmax(nas(m_INCINVST), 0)]
-pairs[, couple_assetinc := rowSums(cbind(f_assetinc, m_assetinc), na.rm = TRUE)]
-pairs[is.na(f_assetinc) & is.na(m_assetinc), couple_assetinc := NA_real_]
+# 4c. Asset income -- retained ONLY as a robustness row in Section 6.
+pairs[, couple_assetinc := rowSums(cbind(pmax(nas(f_INCINVST), 0),
+                                         pmax(nas(m_INCINVST), 0)), na.rm = TRUE)]
+pairs[, wealthy_asset := as.numeric(couple_assetinc > 0)]
 
-# Binary split. Asset income is ~85% zero, so quantile cuts are undefined in
-# the lower ties -- "reports any asset income" is the only split the data
-# actually supports. A stricter tier is carried alongside it as a robustness
-# check on the same axis.
-pairs[, wealthy := fifelse(is.na(couple_assetinc), NA_character_,
-                           fifelse(couple_assetinc > 0, "Wealthy", "Not wealthy"))]
-# Strict tier: top decile OF ASSET HOLDERS, cut within year so the threshold
-# tracks the (declining) reporting rate rather than a fixed dollar amount.
-p90 <- pairs[couple_assetinc > 0,
-             .(asset_p90 = quantile(couple_assetinc, 0.90, na.rm = TRUE)), by = YEAR]
-pairs <- merge(pairs, p90, by = "YEAR", all.x = TRUE)
-pairs[, wealthy_strict := fifelse(
-  is.na(couple_assetinc) | is.na(asset_p90), NA_character_,
-  fifelse(couple_assetinc >= asset_p90, "Top-decile asset holders", "Other"))]
-pairs[, ln_assetinc := log1p(pmax(couple_assetinc, 0))]
-
-# 4d. CULTURE AXIS — county vote margin.
+# 4d. CULTURE AXIS -- county vote margin.
 pairs[, fips := build_county_fips(f_STATEICP, f_COUNTYICP)]
-
 pol_files <- list.files(panel_dir, pattern = "_lfpr_panel_with_groups[.]csv$",
                         full.names = TRUE)
 pol <- fread(sort(pol_files)[length(pol_files)],
@@ -205,371 +194,254 @@ pol <- fread(sort(pol_files)[length(pol_files)],
 pol[, fips := pad_fips(fips)]
 setnames(pol, "year", "YEAR")
 pol <- unique(pol[!is.na(vote_margin) & !is.na(fips)], by = c("fips", "YEAR"))
-
 pairs <- merge(pairs, pol, by = c("fips", "YEAR"), all.x = TRUE)
 message("  couples matched to a county vote margin: ",
         format(sum(!is.na(pairs$vote_margin)), big.mark = ","),
         " (", round(100 * mean(!is.na(pairs$vote_margin)), 1), "%)")
-
 pairs[, culture := fifelse(is.na(vote_margin), NA_character_,
                            fifelse(vote_margin < 0, "Conservative", "Progressive"))]
 
-# 4e. Frontier (Bazzi et al.) — a second, independent culture proxy.
-frontier <- fread(file.path(panel_dir, "bazzi_frontier_indicators.csv"),
-                  select = c("fips", "is_frontier"))
-frontier[, fips := pad_fips(fips)]
-frontier <- unique(frontier, by = "fips")
-pairs <- merge(pairs, frontier, by = "fips", all.x = TRUE)
+# 4e. WEALTH AXIS -- housing (IPUMS extract usa:6, one row per household).
+hw <- fread(file.path(panel_dir, "housing_wealth_by_household.csv"))
+pairs <- merge(pairs, hw, by = c("YEAR", "SAMPLE", "SERIAL"), all.x = TRUE)
+message("  couples matched to a housing record: ",
+        format(sum(!is.na(pairs$owns)), big.mark = ","),
+        " (", round(100 * mean(!is.na(pairs$owns)), 1), "%)")
 
-# 4f. Controls.
-pairs[, `:=`(
-  year_f    = factor(YEAR),
-  state_f   = factor(f_STATEICP),
-  f_age     = as.numeric(f_AGE),
-  m_age     = as.numeric(m_AGE),
-  f_college = as.numeric(f_EDUC >= 10L),
-  m_college = as.numeric(m_EDUC >= 10L),
-  any_kids  = as.numeric(f_NCHILD > 0L),
-  ln_m_labinc = log1p(pmax(m_labinc, 0))
-)]
-
-# Labour-income decile, computed WITHIN year so it is a rank not a dollar
-# threshold, and on COUPLE labour income so it is symmetric in the spouses.
-
-quad <- pairs[!is.na(culture) & !is.na(wealthy)]
-quad[, quadrant := paste0(culture, " / ", wealthy)]
-message("  analysis sample (culture + wealth both defined): ",
-        format(nrow(quad), big.mark = ","))
-
+quad <- pairs[!is.na(culture)]
 rm(pairs); invisible(gc())
 saveRDS(quad, cache_path)
-message("  cached sample for re-runs: ", cache_path,
-        "  (re-run with T2_CACHE=", cache_path, " to skip the scan)")
+message("  cached sample for re-runs: ", cache_path)
 }
 
+# ── 5) Derived axes and controls (applied on both the cold and cached path) ──
 quad[, conservative := as.numeric(culture == "Conservative")]
-quad[, wealth_bin   := as.numeric(wealthy == "Wealthy")]
 
-# ── Income rank: condition on the HUSBAND'S earnings, not the couple's ───────
-# This is deliberate and it matters. couple_labinc = his + HERS, so ranking on
-# it would condition on the dependent variable: a wife who does not work drags
-# her household into a lower decile by construction. Comparing wealthy and
-# non-wealthy couples "within decile" would then be partly a comparison of
-# households selected on her labour supply -- a textbook bad control, and it
-# would inflate the wealth effect rather than purge it.
-# The husband's labour income is the right conditioning set: it captures the
-# couple's earnings capacity without containing her participation decision.
-# (Not perfectly exogenous -- he may adjust hours in response to her -- but it
-# does not contain the outcome mechanically.)
-# Rank-based rather than cut(quantile(...)): with mass points in the earnings
-# distribution the quantile breaks are not guaranteed unique, and cut() errors
-# on duplicate breaks instead of degrading gracefully.
+# House value ranked WITHIN STATE x YEAR -- see header guard (a).
+quad[, home_value_rank := frank(home_value, ties.method = "average", na.last = "keep") /
+                          sum(!is.na(home_value)), by = .(f_STATEICP, YEAR)]
+quad[, wealthy := fifelse(is.na(owns), NA_real_,
+                   fifelse(owns == 1L & !is.na(home_value_rank) & home_value_rank >= 0.75, 1, 0))]
+quad[, outright := as.numeric(owns_outright)]
+# Renters are coded NOT wealthy rather than missing: renting at these ages is
+# itself a wealth signal, not an absence of information.
+quad[, wealth_tier := fcase(
+  is.na(owns),                    NA_character_,
+  owns == 0L,                     "1 Renter",
+  owns == 1L & outright %in% 0,   "2 Owner, mortgaged",
+  owns == 1L & outright %in% 1 & (is.na(home_value_rank) | home_value_rank < 0.75),
+                                  "3 Owner outright",
+  owns == 1L & outright %in% 1,   "4 Owner outright, top-quartile value",
+  default = NA_character_)]
+
+# Husband's labour-income decile, ranked within year -- see header guard (b).
 quad[m_labinc > 0,
      husb_decile := as.integer(pmin(10, floor(10 * (frank(m_labinc, ties.method = "average") - 0.5) / .N) + 1)),
      by = YEAR]
-# Couple-income version retained ONLY as the contaminated comparison, so the
-# size of the bad-control bias is visible rather than hidden.
+# The contaminated couple-income version, kept ONLY for the Section 6 contrast.
 quad[couple_labinc > 0,
-     labinc_decile := as.integer(pmin(10, floor(10 * (frank(couple_labinc, ties.method = "average") - 0.5) / .N) + 1)),
+     bad_decile := as.integer(pmin(10, floor(10 * (frank(couple_labinc, ties.method = "average") - 0.5) / .N) + 1)),
      by = YEAR]
 
-quad[, ageband := cut(f_age, c(17, 29, 39, 49, 59, 65),
-                      labels = c("18-29", "30-39", "40-49", "50-59", "60-65"))]
+# EDUC (IPUMS): <=6 is 12th grade or less, 7-9 some college, >=10 a 4-year degree.
+educ3 <- function(e) fcase(is.na(e) | e == 0L, NA_character_,
+                           e <= 6L,  "1 HS or less",
+                           e <= 9L,  "2 Some college",
+                           default = "3 College+")
+quad[, `:=`(f_educ3 = educ3(f_EDUC), m_educ3 = educ3(m_EDUC))]
 
-# ── 5) The quadrant ──────────────────────────────────────────────────────────
+# NCHILD is the count of own children in the household. Kept as a count (for
+# controls) and as a capped factor (for the decomposition), since the labour
+# supply response is steeply non-linear in the first child.
+quad[, nchild    := as.numeric(f_NCHILD)]
+quad[, nchild_f  := factor(pmin(nchild, 3), levels = 0:3,
+                           labels = c("0", "1", "2", "3+"))]
+quad[, any_kids  := as.numeric(nchild > 0)]
+
+quad[, `:=`(
+  year_f      = factor(YEAR),
+  state_f     = factor(f_STATEICP),
+  decile_f    = factor(husb_decile),
+  f_age       = as.numeric(f_AGE),
+  m_age       = as.numeric(m_AGE),
+  f_college   = as.numeric(f_EDUC >= 10L),
+  m_college   = as.numeric(m_EDUC >= 10L),
+  ln_m_labinc = log1p(pmax(m_labinc, 0))
+)]
+
+# Control set. nchild replaces the old binary any_kids: the participation
+# response to a second and third child is not the same as to the first.
+ctrl <- paste("f_age + I(f_age^2) + m_age + f_college + m_college +",
+              "nchild + I(nchild^2) + ln_m_labinc")
+
+qa <- quad[!is.na(wealthy)]
+message("\nAnalysis sample (culture + housing wealth both defined): ",
+        format(nrow(qa), big.mark = ","))
+
+# ── 6) The quadrant ──────────────────────────────────────────────────────────
 message("\n=== T2.1  THE QUADRANT: wife's labour supply by culture x wealth ===")
 
-quad_tab <- quad[, .(
-  couples          = .N,
-  wtd_couples      = sum(f_HHWT, na.rm = TRUE),
-  lfp_pct          = 100 * wmean(f_lfp, f_HHWT),
-  weekly_hours     = wmean(f_weekly_hours, f_HHWT),
-  hours_if_working = wmean(f_hours_if_working, f_HHWT),
-  couple_labinc    = wmean(couple_labinc, f_HHWT),
-  asset_income     = wmean(couple_assetinc, f_HHWT)
-), by = .(culture, wealthy)][order(culture, wealthy)]
-
+quad_tab <- qa[, .(couples          = .N,
+                   lfp_pct          = round(100 * wmean(f_lfp, f_HHWT), 2),
+                   weekly_hours     = round(wmean(f_weekly_hours, f_HHWT), 2),
+                   hours_if_working = round(wmean(f_hours_if_working, f_HHWT), 2),
+                   mean_nchild      = round(wmean(nchild, f_HHWT), 2)),
+               by = .(culture, wealthy)][order(culture, wealthy)]
 print(quad_tab)
-
-# The two elasticities the quadrant exists to separate. Each is a difference
-# of differences within the 2x2: the wealth gap holds culture fixed and the
-# culture gap holds wealth fixed.
-gap <- function(dt, outcome) {
-  g <- function(cul, wl) dt[culture == cul & wealthy == wl][[outcome]]
-  c(wealth_gap_within_conservative = g("Conservative", "Wealthy") - g("Conservative", "Not wealthy"),
-    wealth_gap_within_progressive  = g("Progressive",  "Wealthy") - g("Progressive",  "Not wealthy"),
-    culture_gap_within_notwealthy  = g("Conservative", "Not wealthy") - g("Progressive", "Not wealthy"),
-    culture_gap_within_wealthy     = g("Conservative", "Wealthy")     - g("Progressive", "Wealthy"))
-}
-message("\nLFP gaps (percentage points):")
-print(round(gap(quad_tab, "lfp_pct"), 3))
-message("\nWeekly-hours gaps:")
-print(round(gap(quad_tab, "weekly_hours"), 3))
-
 fwrite(quad_tab, dated_path(results_dir, "t2_quadrant_means.csv"))
 
-# ── 6) THE MAIN RESULT: the same quadrant WITHIN labour-income decile ────────
-# If the wealth gaps in Section 5 are really an income gradient wearing a
-# wealth costume, they collapse once earnings are held roughly fixed here.
-message("\n=== T2.2  QUADRANT WITHIN LABOUR-INCOME DECILE ===")
-
-quad_dec <- quad[!is.na(husb_decile), .(
+message("\nWife's labour supply by housing tier (unconditional):")
+tier_tab <- qa[!is.na(wealth_tier), .(
   couples      = .N,
-  lfp_pct      = 100 * wmean(f_lfp, f_HHWT),
-  weekly_hours = wmean(f_weekly_hours, f_HHWT)
-), by = .(husb_decile, culture, wealthy)][order(husb_decile, culture, wealthy)]
+  lfp_pct      = round(100 * wmean(f_lfp, f_HHWT), 2),
+  weekly_hours = round(wmean(f_weekly_hours, f_HHWT), 2)
+), by = wealth_tier][order(wealth_tier)]
+print(tier_tab)
+fwrite(tier_tab, dated_path(results_dir, "t2_housing_tier_means.csv"))
 
-dec_gaps <- rbindlist(lapply(sort(unique(quad_dec$husb_decile)), function(d) {
-  sub <- quad_dec[husb_decile == d]
-  if (nrow(sub) < 4L) return(NULL)
-  data.table(husb_decile = d,
-             t(gap(sub, "lfp_pct")),
-             weekly_hours_wealth_gap_cons = gap(sub, "weekly_hours")[1],
-             weekly_hours_culture_gap_nw  = gap(sub, "weekly_hours")[3])
-}))
-message("\nLFP gaps (pp) by labour-income decile — do they survive conditioning on earnings?")
-print(dec_gaps)
-
-fwrite(quad_dec, dated_path(results_dir, "t2_quadrant_by_income_decile.csv"))
-fwrite(dec_gaps, dated_path(results_dir, "t2_quadrant_gaps_by_income_decile.csv"))
-
-# ── 7) Regressions — state FE throughout ────────────────────────────────────
-# Section 5 is unconditional; these hold demographics fixed and absorb state
-# and year. State FE matter here because both axes are geographic: without
-# them a "culture" gap could be Alabama-vs-Massachusetts in anything at all.
+# ── 7) Regressions ───────────────────────────────────────────────────────────
+# State FE matter because BOTH axes are geographic: without them a "conservative
+# county" coefficient can pick up any way Alabama differs from Massachusetts.
 # SEs clustered on county, the level at which the culture proxy varies.
-message("\n=== T2.3  REGRESSIONS (state + year FE, SE clustered on county) ===")
+message("\n=== T2.2  REGRESSIONS (state + year FE, SE clustered on county) ===")
 
-ctrl <- "f_age + I(f_age^2) + m_age + f_college + m_college + any_kids + ln_m_labinc"
+m_lfp  <- feols(as.formula(paste0("f_lfp ~ conservative * wealthy + ", ctrl,
+                                  " | state_f + year_f + decile_f")),
+                data = qa[!is.na(decile_f)], weights = ~f_HHWT, cluster = ~fips)
+m_hrs  <- feols(as.formula(paste0("f_weekly_hours ~ conservative * wealthy + ", ctrl,
+                                  " | state_f + year_f + decile_f")),
+                data = qa[!is.na(decile_f)], weights = ~f_HHWT, cluster = ~fips)
+m_out  <- feols(as.formula(paste0("f_lfp ~ conservative * outright + ", ctrl,
+                                  " | state_f + year_f + decile_f")),
+                data = quad[!is.na(outright) & !is.na(decile_f)],
+                weights = ~f_HHWT, cluster = ~fips)
+m_asset <- feols(as.formula(paste0("f_lfp ~ conservative * wealthy_asset + ", ctrl,
+                                   " | state_f + year_f + decile_f")),
+                 data = quad[!is.na(decile_f)], weights = ~f_HHWT, cluster = ~fips)
 
-m_lfp <- feols(as.formula(paste0(
-  "f_lfp ~ conservative * wealth_bin + ", ctrl, " | state_f + year_f")),
-  data = quad, weights = ~f_HHWT, cluster = ~fips)
+etable(m_lfp, m_hrs, m_out, m_asset,
+       headers = c("LFP, top-qtile home", "Hours, top-qtile home",
+                   "LFP, owns outright", "LFP, asset income (robustness)"),
+       keep = c("conservative", "wealthy", "outright", "wealthy_asset"), digits = 4)
 
-m_hrs <- feols(as.formula(paste0(
-  "f_weekly_hours ~ conservative * wealth_bin + ", ctrl, " | state_f + year_f")),
-  data = quad, weights = ~f_HHWT, cluster = ~fips)
+# The bad-control contrast: same model, contaminated conditioning set.
+m_bad <- feols(as.formula(paste0("f_lfp ~ conservative * wealthy + ", ctrl,
+                                 " | state_f + year_f + bad_decile")),
+               data = qa[!is.na(bad_decile)], weights = ~f_HHWT, cluster = ~fips)
+message("\nBad-control contrast -- conditioning on COUPLE income (contains her earnings):")
+etable(m_lfp, m_bad,
+       headers = c("husband-decile FE (correct)", "couple-decile FE (BAD CONTROL)"),
+       keep = c("conservative", "wealthy"), digits = 4)
 
-# Continuous versions: the binary wealth split throws away all variation among
-# asset holders, and the binary culture split throws away margin intensity.
-m_lfp_cont <- feols(as.formula(paste0(
-  "f_lfp ~ vote_margin * ln_assetinc + ", ctrl, " | state_f + year_f")),
-  data = quad, weights = ~f_HHWT, cluster = ~fips)
-
-etable(m_lfp, m_hrs, m_lfp_cont,
-       headers = c("LFP (binary axes)", "Weekly hours", "LFP (continuous axes)"),
-       digits = 4)
-
-t2_coefs <- rbindlist(lapply(
-  list(`LFP (binary)` = m_lfp, `Weekly hours` = m_hrs, `LFP (continuous)` = m_lfp_cont),
+fwrite(rbindlist(lapply(
+  list("LFP top-quartile home"   = m_lfp,  "Hours top-quartile home" = m_hrs,
+       "LFP owns outright"       = m_out,  "LFP asset income"        = m_asset,
+       "LFP BAD CONTROL"         = m_bad),
   function(m) {
     ct <- as.data.table(coeftable(m), keep.rownames = "term")
     setnames(ct, c("term", "estimate", "std_error", "t_value", "p_value"))
-    ct[term %like% "conservative|wealth_bin|vote_margin|ln_assetinc"]
-  }), idcol = "model")
-fwrite(t2_coefs, dated_path(results_dir, "t2_regression_coefficients.csv"))
+    ct[term %like% "conservative|wealthy|outright"]
+  }), idcol = "model"),
+  dated_path(results_dir, "t2_regressions.csv"))
 
-# ── 8) Plots ─────────────────────────────────────────────────────────────────
-save_plot("t2_quadrant_lfp_and_hours.png", {
-  pd <- melt(quad_tab, id.vars = c("culture", "wealthy"),
-             measure.vars = c("lfp_pct", "weekly_hours"),
-             variable.name = "outcome", value.name = "value")
-  pd[, outcome := factor(outcome, levels = c("lfp_pct", "weekly_hours"),
-        labels = c("Wife's labour force participation (%)",
-                   "Wife's usual weekly hours (incl. zeros)"))]
-  print(
-    ggplot(pd, aes(x = wealthy, y = value, fill = culture)) +
-      geom_col(position = position_dodge(width = 0.8), width = 0.7) +
-      geom_text(aes(label = sprintf("%.1f", value)),
-                position = position_dodge(width = 0.8), vjust = -0.4, size = 3.2) +
-      facet_wrap(~outcome, scales = "free_y") +
-      scale_fill_manual(values = c(Conservative = "#B2182B", Progressive = "#2166AC")) +
-      labs(title = "T2: wife's labour supply by culture x wealth quadrant",
-           subtitle = paste0("Married couples, both 18-65, ", min(t2_years), "-", max(t2_years),
-                             ". Culture = county vote margin; wealth = couple reports asset income.",
-                             "\nUnconditional means, household-weighted."),
-           x = NULL, y = NULL, fill = "County lean",
-           caption = "Source: IPUMS USA. Exploratory; see script header for proxy limitations.") +
-      theme_minimal(base_size = 12) +
-      theme(legend.position = "top")
-  )
-}, width = 2200, height = 1200)
+# ── 8) Is the norm income-elastic? Decile by decile ─────────────────────────
+# An income-ELASTIC norm should be absent at the bottom of the husband's
+# earnings distribution and present at the top. A fixed cultural constant would
+# instead be flat across deciles.
+message("\n=== T2.3  DECILE BY DECILE: is the norm income-elastic? ===")
 
-save_plot("t2_quadrant_lfp_by_income_decile.png", {
-  pd <- quad_dec[!is.na(husb_decile)]
-  pd[, quadrant := paste0(culture, " / ", wealthy)]
-  print(
-    ggplot(pd, aes(x = husb_decile, y = lfp_pct, colour = culture, linetype = wealthy)) +
-      geom_line(linewidth = 0.9) + geom_point(size = 1.6) +
-      scale_x_continuous(breaks = 1:10) +
-      scale_colour_manual(values = c(Conservative = "#B2182B", Progressive = "#2166AC")) +
-      labs(title = "T2: does the quadrant survive conditioning on earnings?",
-           subtitle = paste0("Wife's LFP by husband's labour-income decile (within year), ",
-                             min(t2_years), "-", max(t2_years),
-                             ".\nIf wealth gaps were an income gradient in disguise, the ",
-                             "solid/dashed pairs would converge."),
-           x = "Husband's labour-income decile (within year)",
-           y = "Wife's labour force participation (%)",
-           colour = "County lean", linetype = "Asset income") +
-      theme_minimal(base_size = 12) +
-      theme(legend.position = "top")
-  )
-}, width = 2200, height = 1300)
-
-# ── 9) IS THE NORM INCOME-ELASTIC? The quadrant re-estimated DECILE BY DECILE ─
-# Section 6 showed the raw gaps by decile; this repeats it with the full control
-# set and fixed effects, so the decile profile cannot be an age or education
-# composition effect. This is the direct test of the project's central claim:
-# an income-ELASTIC norm means the culture x wealth interaction should be
-# absent at the bottom of the earnings distribution and present at the top.
-# A norm that is a fixed cultural constant would instead be flat across deciles.
-message("\n=== T2.4  DECILE-BY-DECILE: is the norm income-elastic? ===")
-
-dec_list <- sort(unique(quad[!is.na(husb_decile)]$husb_decile))
-dec_coefs <- rbindlist(lapply(dec_list, function(d) {
-  sub <- quad[husb_decile == d]
+dec_coefs <- rbindlist(lapply(sort(unique(qa[!is.na(husb_decile)]$husb_decile)), function(d) {
+  sub <- qa[husb_decile == d]
   if (nrow(sub) < 5000L || uniqueN(sub$state_f) < 2L) return(NULL)
-  m <- tryCatch(feols(as.formula(paste0(
-         "f_lfp ~ conservative * wealth_bin + ", ctrl, " | state_f + year_f")),
-         data = sub, weights = ~f_HHWT, cluster = ~fips),
-       error = function(e) NULL)
+  m <- tryCatch(feols(as.formula(paste0("f_lfp ~ conservative * wealthy + ", ctrl,
+                                        " | state_f + year_f")),
+                      data = sub, weights = ~f_HHWT, cluster = ~fips),
+                error = function(e) NULL)
   if (is.null(m)) return(NULL)
   ct <- as.data.table(coeftable(m), keep.rownames = "term")
   setnames(ct, c("term", "estimate", "std_error", "t_value", "p_value"))
-  ct <- ct[term %in% c("conservative", "wealth_bin", "conservative:wealth_bin")]
-  ct[, `:=`(husb_decile = d, n = nrow(sub))]
-  ct
+  ct[term %in% c("conservative", "wealthy", "conservative:wealthy")][
+     , `:=`(husb_decile = d, n = nrow(sub))]
 }))
 dec_coefs[, `:=`(ci_lo = estimate - 1.96 * std_error,
                  ci_hi = estimate + 1.96 * std_error)]
-
-message("\nLFP effects by couple labour-income decile (pp, controls + state/year FE):")
-print(dec_coefs[, .(husb_decile, term,
-                    est_pp = round(100 * estimate, 2),
-                    lo_pp  = round(100 * ci_lo, 2),
-                    hi_pp  = round(100 * ci_hi, 2),
+print(dec_coefs[, .(husb_decile, term, est_pp = round(100 * estimate, 2),
+                    lo_pp = round(100 * ci_lo, 2), hi_pp = round(100 * ci_hi, 2),
                     p = signif(p_value, 2))][order(term, husb_decile)])
-
 fwrite(dec_coefs, dated_path(results_dir, "t2_decile_coefficients.csv"))
 
-save_plot("t2_income_elasticity_of_the_norm.png", {
-  pd <- copy(dec_coefs)
-  pd[, term := factor(term,
-       levels = c("wealth_bin", "conservative", "conservative:wealth_bin"),
-       labels = c("Wealth effect (asset income)",
-                  "Culture effect (conservative county)",
-                  "Culture x wealth interaction"))]
-  print(
-    ggplot(pd, aes(x = husb_decile, y = 100 * estimate)) +
-      geom_hline(yintercept = 0, colour = "grey40", linewidth = 0.4) +
-      geom_ribbon(aes(ymin = 100 * ci_lo, ymax = 100 * ci_hi),
-                  fill = "#4292C6", alpha = 0.25) +
-      geom_line(colour = "#08519C", linewidth = 0.9) +
-      geom_point(colour = "#08519C", size = 1.8) +
-      facet_wrap(~term, nrow = 1, scales = "free_y") +
-      scale_x_continuous(breaks = 1:10) +
-      labs(title = "T2: is the breadwinner norm income-elastic?",
-           subtitle = paste0("Effect on wife's LFP, estimated separately within each couple ",
-                             "husband's labour-income decile, ", min(t2_years), "-", max(t2_years),
-                             ".\nControls: both ages, both education, children, husband's ",
-                             "labour income; state and year fixed effects. 95% CI, SE clustered on county."),
-           x = "Husband's labour-income decile (within year)",
-           y = "Effect on wife's LFP (percentage points)",
-           caption = "Source: IPUMS USA + county presidential returns. Exploratory; proxies described in script header.") +
-      theme_minimal(base_size = 12) +
-      theme(panel.spacing = unit(1.2, "lines"))
-  )
-}, width = 2600, height = 1100)
+# ── 9) Education decomposition ───────────────────────────────────────────────
+# Education is the obvious alternative explanation for both axes: it predicts
+# earnings capacity, marriage market position, AND stated gender attitudes. If
+# the quadrant interaction is really an education effect, it should vanish once
+# estimated within education group.
+message("\n=== T2.4  EDUCATION DECOMPOSITION (wife's education) ===")
 
-# ── 10) ROBUSTNESS: does the pooled interaction survive FLEXIBLE income control? ─
-# Section 7's pooled model controls for income only as linear ln(husband's
-# labour income). Section 9 estimates the same interaction separately within
-# each decile and finds it ~0 in deciles 1-9. Those two cannot both be right:
-# if the interaction were genuinely -2pp everywhere, the decile-wise estimates
-# would show it. The suspicion is that the pooled interaction is absorbing
-# cross-decile COMPOSITION rather than a within-income cultural effect.
-# This section adjudicates by adding income-decile fixed effects, and then by
-# letting the whole control set vary by decile.
-message("
-=== T2.5  Is the pooled interaction robust to flexible income controls? ===")
+edu_tab <- qa[!is.na(f_educ3), .(
+  couples = .N,
+  lfp_pct = round(100 * wmean(f_lfp, f_HHWT), 2)
+), by = .(f_educ3, culture, wealthy)][order(f_educ3, culture, wealthy)]
+print(dcast(edu_tab, f_educ3 + wealthy ~ culture, value.var = "lfp_pct"))
 
-qd <- quad[!is.na(husb_decile)]
-qd[, decile_f     := factor(husb_decile)]
-qd[, bad_decile_f := factor(labinc_decile)]
+edu_coefs <- rbindlist(lapply(sort(unique(na.omit(qa$f_educ3))), function(g) {
+  sub <- qa[f_educ3 == g & !is.na(decile_f)]
+  if (nrow(sub) < 5000L) return(NULL)
+  m <- tryCatch(feols(as.formula(paste0("f_lfp ~ conservative * wealthy + ", ctrl,
+                                        " | state_f + year_f + decile_f")),
+                      data = sub, weights = ~f_HHWT, cluster = ~fips),
+                error = function(e) NULL)
+  if (is.null(m)) return(NULL)
+  ct <- as.data.table(coeftable(m), keep.rownames = "term")
+  setnames(ct, c("term", "estimate", "std_error", "t_value", "p_value"))
+  ct[term %in% c("conservative", "wealthy", "conservative:wealthy")][
+     , `:=`(f_educ3 = g, n = nrow(sub))]
+}))
+message("\nLFP effects by wife's education (pp):")
+print(edu_coefs[, .(f_educ3, term, est_pp = round(100 * estimate, 2),
+                    se_pp = round(100 * std_error, 2), p = signif(p_value, 2))][order(term, f_educ3)])
+fwrite(edu_coefs, dated_path(results_dir, "t2_education_decomposition.csv"))
 
-r1 <- feols(as.formula(paste0("f_lfp ~ conservative * wealth_bin + ", ctrl,
-                              " | state_f + year_f")),
-            data = qd, weights = ~f_HHWT, cluster = ~fips)
-r2 <- feols(as.formula(paste0("f_lfp ~ conservative * wealth_bin + ", ctrl,
-                              " | state_f + year_f + decile_f")),
-            data = qd, weights = ~f_HHWT, cluster = ~fips)
-r3 <- feols(as.formula(paste0("f_lfp ~ conservative * wealth_bin + ", ctrl,
-                              " | state_f + year_f + decile_f^year_f")),
-            data = qd, weights = ~f_HHWT, cluster = ~fips)
+# ── 10) Children decomposition ──────────────────────────────────────────────
+# The norm may operate THROUGH fertility rather than directly on labour supply:
+# if conservative-and-wealthy couples simply have more children, the quadrant
+# interaction could be a childcare constraint wearing a cultural label.
+message("\n=== T2.5  CHILDREN ===")
 
-# r4 deliberately uses the CONTAMINATED couple-income decile, to show how much
-# of the "wealth effect" is manufactured by conditioning on the outcome.
-r4 <- feols(as.formula(paste0("f_lfp ~ conservative * wealth_bin + ", ctrl,
-                              " | state_f + year_f + bad_decile_f")),
-            data = qd[!is.na(bad_decile_f)], weights = ~f_HHWT, cluster = ~fips)
+message("\nDoes the quadrant differ in family size? (mean own children)")
+print(dcast(qa[, .(nchild = round(wmean(nchild, f_HHWT), 2)), by = .(culture, wealthy)],
+            culture ~ wealthy, value.var = "nchild"))
 
-etable(r1, r2, r3, r4,
-       headers = c("linear income ctrl", "+ husband-decile FE",
-                   "+ husb-decile x year FE", "BAD CONTROL: couple-decile FE"),
-       keep = c("conservative", "wealth_bin"), digits = 4)
+kid_coefs <- rbindlist(lapply(levels(qa$nchild_f), function(g) {
+  sub <- qa[nchild_f == g & !is.na(decile_f)]
+  if (nrow(sub) < 5000L) return(NULL)
+  m <- tryCatch(feols(as.formula(paste0(
+      "f_lfp ~ conservative * wealthy + f_age + I(f_age^2) + m_age + ",
+      "f_college + m_college + ln_m_labinc | state_f + year_f + decile_f")),
+      data = sub, weights = ~f_HHWT, cluster = ~fips), error = function(e) NULL)
+  if (is.null(m)) return(NULL)
+  ct <- as.data.table(coeftable(m), keep.rownames = "term")
+  setnames(ct, c("term", "estimate", "std_error", "t_value", "p_value"))
+  ct[term %in% c("conservative", "wealthy", "conservative:wealthy")][
+     , `:=`(nchild = g, n = nrow(sub))]
+}))
+message("\nLFP effects by number of own children (pp):")
+print(kid_coefs[, .(nchild, term, est_pp = round(100 * estimate, 2),
+                    se_pp = round(100 * std_error, 2), p = signif(p_value, 2))][order(term, nchild)])
+fwrite(kid_coefs, dated_path(results_dir, "t2_children_decomposition.csv"))
 
-# Age is the other composition threat: wealthy couples are ~5 years older and
-# LFP falls steeply with age, so the raw quadrant conflates the two.
-message("\nWife's LFP by wealth cell WITHIN age band (household-weighted, %):")
-ab <- dcast(quad[!is.na(ageband), .(lfp = 100 * wmean(f_lfp, f_HHWT)),
-                 by = .(ageband, wealthy)], ageband ~ wealthy, value.var = "lfp")
-ab[, wealth_gap_pp := round(Wealthy - `Not wealthy`, 2)]
-print(ab)
-fwrite(ab, dated_path(results_dir, "t2_wealth_gap_by_age_band.csv"))
-
-rob_out <- rbindlist(lapply(
-  list("linear income ctrl" = r1, "+ decile FE" = r2, "+ decile x year FE" = r3),
-  function(m) {
-    ct <- as.data.table(coeftable(m), keep.rownames = "term")
-    setnames(ct, c("term", "estimate", "std_error", "t_value", "p_value"))
-    ct[term %like% "conservative|wealth_bin"]
-  }), idcol = "model")
-fwrite(rob_out, dated_path(results_dir, "t2_pooled_robustness.csv"))
-
-message("
-T2 complete. Tables and figures written to ", results_dir, " and data/graphs/.")
-
-# ── 11) THE DONUT KINK RDD, RE-RUN WITH STATE FIXED EFFECTS ─────────────────
-# ipums-rdd-breadwinner-norm.R Section 10 runs this interaction with YEAR fixed
-# effects only. That is not enough here: both the political split and the wealth
-# axis are geographic, so without state FE a "conservative county" coefficient
-# can pick up any way Alabama differs from Massachusetts -- industry mix, cost
-# of living, childcare availability. State FE force a within-state comparison.
-#
-# Two further corrections to the original specification:
-#   * SEs clustered on COUNTY. The political proxy is assigned at county level,
-#     so residuals of couples in the same county are not independent and
-#     unclustered SEs are anticonservative by construction.
-#   * The wealth axis is added. The standalone RDD panel carries no asset
-#     income, so it could never ask whether the kink is a wealth phenomenon.
-#
-# Design (unchanged from the original, so numbers stay comparable):
-#     y ~ (z_c + D + D*z_c) * G   over  donut < |z - 0.5| <= bandwidth
-# z = wife's share of couple LABOUR earnings on the interior (both earning),
-# z_c = z - 0.5, D = 1[z_c >= 0]. Coefficient of interest: D_zc:G, the
-# DIFFERENTIAL kink.
+# ── 11) The donut kink RDD, with state fixed effects ────────────────────────
+# ipums-rdd-breadwinner-norm.R Section 10 runs this with YEAR FE only and
+# unclustered SEs. Both are corrected here: state FE force a within-state
+# comparison, and clustering on county respects the level at which the culture
+# proxy is assigned.
 message("\n=== T2.6  DONUT KINK RDD WITH STATE FE ===")
 
-donut_primary <- 0.02
-rdd_bw        <- 0.20
-
-rdd <- quad[f_labinc > 0 & m_labinc > 0]
+rdd <- qa[f_labinc > 0 & m_labinc > 0]
 rdd[, z := f_labinc / (f_labinc + m_labinc)]
 rdd <- rdd[!is.na(z) & abs(z - 0.5) > donut_primary & abs(z - 0.5) <= rdd_bw]
 rdd[, z_c  := z - 0.5]
 rdd[, D    := as.integer(z_c >= 0)]
 rdd[, D_zc := D * z_c]
-
 message("  RDD sample (interior, donut-excluded, |z-0.5| <= ", rdd_bw, "): ",
         format(nrow(rdd), big.mark = ","), " couples")
 
@@ -580,154 +452,89 @@ r_yr_cl <- feols(as.formula(paste("f_weekly_hours", f_pol, "| year_f")),
                  data = rdd, weights = ~f_HHWT, cluster = ~fips)
 r_st    <- feols(as.formula(paste("f_weekly_hours", f_pol, "| year_f + state_f")),
                  data = rdd, weights = ~f_HHWT, cluster = ~fips)
+r_w     <- feols(f_weekly_hours ~ (z_c + D + D_zc) * wealthy | year_f + state_f,
+                 data = rdd, weights = ~f_HHWT, cluster = ~fips)
 
-message("\n(a) Political interaction: what do state FE and clustering change?")
-etable(r_yr, r_yr_cl, r_st,
-       headers = c("year FE (original)", "+ cluster county", "+ STATE FE"),
-       digits = 4)
+etable(r_yr, r_yr_cl, r_st, r_w,
+       headers = c("year FE (original)", "+ cluster county", "+ STATE FE",
+                   "wealth interaction"), digits = 4)
 
-r_w  <- feols(f_weekly_hours ~ (z_c + D + D_zc) * wealth_bin | year_f + state_f,
-              data = rdd, weights = ~f_HHWT, cluster = ~fips)
-r_wc <- feols(f_weekly_hours ~ (z_c + D + D_zc) * conservative * wealth_bin |
-                year_f + state_f,
-              data = rdd, weights = ~f_HHWT, cluster = ~fips)
-
-message("\n(b) Is the kink a WEALTH phenomenon rather than a cultural one?")
-etable(r_w, r_wc, headers = c("wealth interaction", "culture x wealth"), digits = 4)
-
-rdd_out <- rbindlist(lapply(
-  list("hours: year FE only"        = r_yr,
-       "hours: year FE + clustered" = r_yr_cl,
-       "hours: + state FE"          = r_st,
-       "hours: wealth interaction"  = r_w,
-       "hours: culture x wealth"    = r_wc),
+fwrite(rbindlist(lapply(
+  list("year FE only" = r_yr, "year FE + clustered" = r_yr_cl,
+       "+ state FE"   = r_st, "wealth interaction"  = r_w),
   function(m) {
     ct <- as.data.table(coeftable(m), keep.rownames = "term")
     setnames(ct, c("term", "estimate", "std_error", "t_value", "p_value"))
     ct
-  }), idcol = "model", fill = TRUE)
-fwrite(rdd_out, dated_path(results_dir, "t2_rdd_state_fe.csv"))
+  }), idcol = "model", fill = TRUE),
+  dated_path(results_dir, "t2_rdd_state_fe.csv"))
 
-message("\n  Read: D_zc is the kink in the omitted group; each interaction is")
-message("  that group's DIFFERENTIAL kink.")
-message("\nT2 Section 11 complete.")
-
-# ── 12) THE QUADRANT REBUILT ON HOUSING WEALTH ──────────────────────────────
-# The INCINVST axis used above is thin (~15% of couples) and its coverage
-# DECLINES over the sample, so it reads asset-holding with error. Housing is
-# the better instrument for the same latent variable: 70% of households own,
-# 28-32% own free and clear, and VALUEH is a LEVEL rather than a binary.
-#
-# THREE HOUSING MEASURES, because they capture different things:
-#   owns_outright  owning with no mortgage at working age. The cleanest single
-#                  wealth signal in the ACS -- the asset is held free of debt.
-#   wealthy_home   top quartile of house value WITHIN STATE x YEAR. Ranking
-#                  within state is essential: a $250k house is top-decile
-#                  wealth in Mississippi and below-median in California, so a
-#                  national dollar cut would encode geography as wealth --
-#                  and geography is also the culture axis, which would
-#                  manufacture exactly the interaction we are testing for.
-#   wealth_tier    4-level descriptive ladder (renter -> outright owner).
-# Renters are coded NOT wealthy rather than missing: renting at these ages is
-# itself a wealth signal, not an absence of information.
-message("\n=== T2.7  THE QUADRANT ON HOUSING WEALTH ===")
-
-hw <- fread(file.path(panel_dir, "housing_wealth_by_household.csv"))
-quad <- merge(quad, hw, by = c("YEAR", "SAMPLE", "SERIAL"), all.x = TRUE)
-message("  couples matched to housing record: ",
-        format(sum(!is.na(quad$owns)), big.mark = ","),
-        " (", round(100 * mean(!is.na(quad$owns)), 1), "%)")
-
-quad[, home_value_rank := frank(home_value, ties.method = "average", na.last = "keep") / sum(!is.na(home_value)),
-     by = .(state_f, YEAR)]
-quad[, wealthy_home := fifelse(is.na(owns), NA_real_,
-                        fifelse(owns == 1L & !is.na(home_value_rank) & home_value_rank >= 0.75, 1, 0))]
-quad[, outright := as.numeric(owns_outright)]
-quad[, wealth_tier := fcase(
-  is.na(owns),                                   NA_character_,
-  owns == 0L,                                    "1 Renter",
-  owns == 1L & outright %in% 0,                  "2 Owner, mortgaged",
-  owns == 1L & outright %in% 1 & (is.na(home_value_rank) | home_value_rank < 0.75), "3 Owner outright",
-  owns == 1L & outright %in% 1,                  "4 Owner outright, top-quartile value",
-  default = NA_character_)]
-
-message("\nWife's labour supply by housing wealth tier:")
-print(quad[!is.na(wealth_tier), .(
-  couples      = .N,
-  lfp_pct      = round(100 * wmean(f_lfp, f_HHWT), 2),
-  weekly_hours = round(wmean(f_weekly_hours, f_HHWT), 2)
-), by = wealth_tier][order(wealth_tier)])
-
-# decile_f is built on a subset in Section 10; define it on quad for use here.
-quad[, decile_f := factor(husb_decile)]
-
-message("\nThe quadrant, culture x HOUSING wealth (top-quartile house value):")
-qh <- quad[!is.na(culture) & !is.na(wealthy_home)]
-qh_tab <- qh[, .(couples = .N,
-                 lfp_pct      = round(100 * wmean(f_lfp, f_HHWT), 2),
-                 weekly_hours = round(wmean(f_weekly_hours, f_HHWT), 2)),
-             by = .(culture, wealthy_home)][order(culture, wealthy_home)]
-print(qh_tab)
-fwrite(qh_tab, dated_path(results_dir, "t2_quadrant_housing_means.csv"))
-
-# Regressions, same control set and FE as Section 7/10 so they are comparable.
-h1 <- feols(as.formula(paste0("f_lfp ~ conservative * wealthy_home + ", ctrl,
-                              " | state_f + year_f")),
-            data = qh, weights = ~f_HHWT, cluster = ~fips)
-h2 <- feols(as.formula(paste0("f_lfp ~ conservative * wealthy_home + ", ctrl,
-                              " | state_f + year_f + decile_f")),
-            data = qh[!is.na(decile_f)], weights = ~f_HHWT, cluster = ~fips)
-h3 <- feols(as.formula(paste0("f_lfp ~ conservative * outright + ", ctrl,
-                              " | state_f + year_f + decile_f")),
-            data = quad[!is.na(culture) & !is.na(outright) & !is.na(decile_f)],
-            weights = ~f_HHWT, cluster = ~fips)
-h4 <- feols(as.formula(paste0("f_weekly_hours ~ conservative * wealthy_home + ", ctrl,
-                              " | state_f + year_f + decile_f")),
-            data = qh[!is.na(decile_f)], weights = ~f_HHWT, cluster = ~fips)
-
-message("\nHousing-wealth quadrant regressions:")
-etable(h1, h2, h3, h4,
-       headers = c("LFP, top-qtile home", "+ husband-decile FE",
-                   "LFP, owns outright", "Hours, top-qtile home"),
-       keep = c("conservative", "wealthy_home", "outright"), digits = 4)
-
-fwrite(rbindlist(lapply(
-  list("LFP top-quartile home"       = h1,
-       "LFP + husband-decile FE"     = h2,
-       "LFP owns outright"           = h3,
-       "Hours top-quartile home"     = h4),
-  function(m) {
-    ct <- as.data.table(coeftable(m), keep.rownames = "term")
-    setnames(ct, c("term", "estimate", "std_error", "t_value", "p_value"))
-    ct[term %like% "conservative|wealthy_home|outright"]
-  }), idcol = "model"),
-  dated_path(results_dir, "t2_housing_wealth_regressions.csv"))
-
-save_plot("t2_quadrant_housing_wealth.png", {
-  pd <- melt(qh_tab, id.vars = c("culture", "wealthy_home"),
+# ── 12) Figures ─────────────────────────────────────────────────────────────
+save_plot("t2_quadrant_lfp_and_hours.png", {
+  pd <- melt(quad_tab, id.vars = c("culture", "wealthy"),
              measure.vars = c("lfp_pct", "weekly_hours"),
              variable.name = "outcome", value.name = "value")
   pd[, outcome := factor(outcome, levels = c("lfp_pct", "weekly_hours"),
         labels = c("Wife's labour force participation (%)",
                    "Wife's usual weekly hours (incl. zeros)"))]
-  pd[, wealth_lab := fifelse(wealthy_home == 1,
-                             "Top-quartile home value\n(within state x year)",
-                             "Other")]
-  print(
-    ggplot(pd, aes(x = wealth_lab, y = value, fill = culture)) +
-      geom_col(position = position_dodge(width = 0.8), width = 0.7) +
-      geom_text(aes(label = sprintf("%.1f", value)),
-                position = position_dodge(width = 0.8), vjust = -0.4, size = 3.2) +
-      facet_wrap(~outcome, scales = "free_y") +
-      scale_fill_manual(values = c(Conservative = "#B2182B", Progressive = "#2166AC")) +
-      labs(title = "T2: the quadrant on HOUSING wealth",
-           subtitle = paste0("Married couples, both 18-65, ", min(t2_years), "-", max(t2_years),
-                             ". Wealth = top-quartile house value within state x year",
-                             "\n(70% of households own, vs ~15% reporting any asset income)."),
-           x = NULL, y = NULL, fill = "County lean",
-           caption = "Source: IPUMS USA extract 6 + county presidential returns.") +
-      theme_minimal(base_size = 12) + theme(legend.position = "top")
-  )
+  pd[, wl := fifelse(wealthy == 1, "Top-quartile home value\n(within state x year)", "Other")]
+  print(ggplot(pd, aes(x = wl, y = value, fill = culture)) +
+    geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+    geom_text(aes(label = sprintf("%.1f", value)),
+              position = position_dodge(width = 0.8), vjust = -0.4, size = 3.2) +
+    facet_wrap(~outcome, scales = "free_y") +
+    scale_fill_manual(values = c(Conservative = "#B2182B", Progressive = "#2166AC")) +
+    labs(title = "T2: wife's labour supply by culture x wealth quadrant",
+         subtitle = paste0("Married couples, both 18-65, ", min(t2_years), "-", max(t2_years),
+                           ". Culture = county vote margin; wealth = housing.",
+                           "\nUnconditional means, household-weighted."),
+         x = NULL, y = NULL, fill = "County lean",
+         caption = "Source: IPUMS USA extracts 4 and 6. Exploratory; see script header.") +
+    theme_minimal(base_size = 12) + theme(legend.position = "top"))
 }, width = 2200, height = 1200)
 
-message("\nT2 Section 12 complete.")
+save_plot("t2_income_elasticity_of_the_norm.png", {
+  pd <- copy(dec_coefs)
+  pd[, term := factor(term, levels = c("wealthy", "conservative", "conservative:wealthy"),
+        labels = c("Wealth (top-quartile home)", "Culture (conservative county)",
+                   "Culture x wealth"))]
+  print(ggplot(pd, aes(x = husb_decile, y = 100 * estimate)) +
+    geom_hline(yintercept = 0, colour = "grey40", linewidth = 0.4) +
+    geom_ribbon(aes(ymin = 100 * ci_lo, ymax = 100 * ci_hi), fill = "#4292C6", alpha = 0.25) +
+    geom_line(colour = "#08519C", linewidth = 0.9) +
+    geom_point(colour = "#08519C", size = 1.8) +
+    facet_wrap(~term, nrow = 1, scales = "free_y") +
+    scale_x_continuous(breaks = 1:10) +
+    labs(title = "T2: is the breadwinner norm income-elastic?",
+         subtitle = paste0("Effect on wife's LFP, estimated within each husband's ",
+                           "labour-income decile, ", min(t2_years), "-", max(t2_years),
+                           ".\nControls: both ages, both education, number of children, ",
+                           "husband's labour income; state and year FE. 95% CI, SE clustered on county."),
+         x = "Husband's labour-income decile (within year)",
+         y = "Effect on wife's LFP (percentage points)") +
+    theme_minimal(base_size = 12) + theme(panel.spacing = unit(1.2, "lines")))
+}, width = 2600, height = 1100)
+
+save_plot("t2_education_and_children_decomposition.png", {
+  e <- edu_coefs[term == "conservative:wealthy",
+                 .(group = f_educ3, facet = "By wife's education",
+                   est = 100 * estimate, se = 100 * std_error)]
+  k <- kid_coefs[term == "conservative:wealthy",
+                 .(group = nchild, facet = "By number of own children",
+                   est = 100 * estimate, se = 100 * std_error)]
+  pd <- rbind(e, k)
+  print(ggplot(pd, aes(x = group, y = est)) +
+    geom_hline(yintercept = 0, colour = "grey40", linewidth = 0.4) +
+    geom_errorbar(aes(ymin = est - 1.96 * se, ymax = est + 1.96 * se),
+                  width = 0.12, colour = "#08519C") +
+    geom_point(size = 2.6, colour = "#08519C") +
+    facet_wrap(~facet, scales = "free_x") +
+    labs(title = "T2: does the culture x wealth interaction survive decomposition?",
+         subtitle = paste0("Interaction effect on wife's LFP, estimated separately within ",
+                           "each group.\nIf the result were an education or family-size ",
+                           "effect in disguise, it would vanish in some cells."),
+         x = NULL, y = "Culture x wealth interaction (pp)") +
+    theme_minimal(base_size = 12))
+}, width = 2400, height = 1100)
+
+message("\nT2 complete. Tables and figures written to ", results_dir, " and data/graphs/.")
