@@ -18,8 +18,19 @@ source("R/paths.R")
 #     (1970, 1980, 1990, 2000) — BKP's Section 3.1 introduces Figure 2 directly
 #     after Figure 1 with no separate restriction stated, so we carry the same
 #     sample forward.
-#   - Table 2/3: both spouses 18-65, husband employed; BKP-era years
-#     (1970, 1980, 1990, 2000, 2008-2010) plus a 2011-2024 extension.
+#   - Table 2/3: both spouses 18-65, husband employed. Published QJE sample is
+#     "1970 to 2000 U.S. Census and 2008 to 2011 ACS single-year files"
+#     (Tables II/III notes, pp. 593/597) -> 1970,1980,1990,2000,2008-2011.
+#     Our post-publication extension then runs 2012-2024.
+#
+# BENCHMARKS ARE THE PUBLISHED QJE TABLES, NOT THE 2013 NBER WORKING PAPER.
+# The two differ in both specification and coefficients, and an earlier version
+# of this script compared against the WP by mistake.
+#   Table II  (wifeLFP,   p.593): col1 -0.178, col2 (cubic) -0.142, col4 -0.143
+#   Table III (incomeGap, p.597): col1 -0.031, col2 (cubic) -0.095, col4 -0.109
+#   N: 7,384,176 (Table II cols 1-4); 5,306,682 (Table III cols 1-4)
+# Marriage-duration fixed effects appear ONLY in column 6 of each table, on the
+# "2010sub" subsample -- they are not part of the baseline specification.
 #   - Income = LABOR income (wage + self-employment), matching BKP. See the
 #     labor_income() helper for the era-splicing and the N/A-code handling.
 #   - Race = BKP's three marriage-market groups (white / Black / Hispanic,
@@ -83,9 +94,9 @@ adult_age       <- c(18, 65)
 
 bkp_era_young_years   <- c(2008L, 2009L, 2010L)                    # Figure 1
 bkp_era_decade_years  <- c(1970L, 1980L, 1990L, 2000L)             # Figure 2 (real 2000 decennial)
-bkp_era_table_years   <- c(1970L, 1980L, 1990L, 2000L, 2008L, 2009L, 2010L)  # Table 2/3
+bkp_era_table_years   <- c(1970L, 1980L, 1990L, 2000L, 2008L, 2009L, 2010L, 2011L)  # Table 2/3 (published: 1970-2000 Census + ACS 2008-2011 single-year)
 extension_young_years <- c(2022L, 2023L, 2024L)                    # 10-years-on Figure 1
-extension_table_years <- 2011L:2024L                               # 10-years-on Table 2/3
+extension_table_years <- 2012L:2024L                               # 10-years-on Table 2/3
 
 min_cell_n <- 30L   # minimum weighted-N to trust a demographic-cell wage percentile
 
@@ -551,6 +562,10 @@ run_table2_table3 <- function(years, era_label) {
   pairs[, wife_potential_mean := rowMeans(pot_mat)]   # BKP: mean of the
                                                       # potential distribution
 
+  # anyChildren: BKP column 4 control ("1 if the wife reports having any
+  # children"). Must be created BEFORE reg_sample is drawn — reg_sample is a
+  # COPY, so a later := on `pairs` would not reach it.
+  pairs[, any_children := as.integer(nchild > 0)]
   pairs[, wife_lfp     := as.integer(female_empstat %in% c(1, 2))]
   pairs[, wife_working := as.integer(female_empstat == 1)]
 
@@ -616,6 +631,13 @@ run_table2_table3 <- function(years, era_label) {
     " + factor(YEAR) + factor(STATEICP) + race3 + husb_race3",
     " + age5 + husb_age5 + educ5 + husb_educ5"
   )
+  # Column 4 controls. NOTE: BKP col 4 also includes wife's demographic group x
+  # husband's demographic group. With 11 age x 5 educ x 3 race = 165 groups per
+  # spouse, that interaction is 165^2 = 27,225 dummies. BKP can absorb it on
+  # 5.3M observations; on our 250k regression subsample it would average ~9
+  # observations per cell and is not identified. We therefore add anyChildren
+  # only, and flag the omission rather than pretending to match column 4 exactly.
+  col4_controls <- paste0(base_controls, " + any_children")
 
   # Column (1): linear in ln(husband income)
   fmla_lfp <- as.formula(paste0(
@@ -664,11 +686,25 @@ run_table2_table3 <- function(years, era_label) {
                n_full_sample = nrow(pairs))
   }
 
+  fmla_lfp_c4 <- as.formula(paste0(
+    "wife_lfp ~ PrWifeEarnsMore + ", potential_formula,
+    " + ln_husb_income + I(ln_husb_income^2) + I(ln_husb_income^3)", col4_controls))
+  fit_lfp_c4 <- lm(fmla_lfp_c4, data = reg_sample, weights = HHWT)
+  se_lfp_c4  <- cluster_se(fit_lfp_c4, reg_sample$cell_id)
+
+  fmla_gap_c4 <- as.formula(paste0(
+    "income_gap ~ PrWifeEarnsMore + ", potential_formula,
+    " + ln_husb_income + I(ln_husb_income^2) + I(ln_husb_income^3)", col4_controls))
+  fit_gap_c4 <- lm(fmla_gap_c4, data = reg_sample_working, weights = HHWT)
+  se_gap_c4  <- cluster_se(fit_gap_c4, reg_sample_working$cell_id)
+
   results <- rbindlist(list(
     extract_beta1(se_lfp,       fit_lfp,       "Wife LFP  [col 1: linear ln(husb inc)]"),
     extract_beta1(se_lfp_cubic, fit_lfp_cubic, "Wife LFP  [col 2: CUBIC ln(husb inc)] <- preferred"),
     extract_beta1(se_gap,       fit_gap,       "Income gap [col 1: linear ln(husb inc)]"),
-    extract_beta1(se_gap_cubic, fit_gap_cubic, "Income gap [col 2: CUBIC ln(husb inc)] <- preferred")
+    extract_beta1(se_lfp_c4,    fit_lfp_c4,    "Wife LFP  [col 4: cubic + anyChildren]"),
+    extract_beta1(se_gap_cubic, fit_gap_cubic, "Income gap [col 2: CUBIC ln(husb inc)] <- preferred"),
+    extract_beta1(se_gap_c4,    fit_gap_c4,    "Income gap [col 4: cubic + anyChildren]")
   ))
 
   message("  Table 2/3 results (", era_label, "):")

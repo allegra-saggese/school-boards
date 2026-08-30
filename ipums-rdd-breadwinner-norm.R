@@ -534,3 +534,78 @@ message("  rdd_donut_breadwinner_norm_results.csv")
 message("  hours_by_income_decile_husband_wife_dem_vs_rep.png (permanent rebuild)")
 message("  share_vs_hh_income_decile_dem_vs_rep.png (permanent rebuild)")
 message("  *_frontier.png variants for all above")
+
+# ── 10) POLITICAL INTERACTION: is the kink itself sharper in Rep counties? ────
+# The project plan has listed this as "designed, not yet run" throughout. The
+# density ratios (Section 4) show MORE bunching below 0.5 in Republican counties
+# (1.50 vs 1.42), but that is a statement about the DISTRIBUTION. It does not
+# tell us whether the behavioural response — how sharply she pulls back her
+# hours once her share approaches the threshold — differs by political lean.
+#
+# Specification: the same donut kink RDD, fully interacted with a Republican
+# indicator.
+#     y ~ (z_c + D + D*z_c) * Rep + year FE ,  weighted, donut excluded
+# The coefficient of interest is D_zc:rep — the DIFFERENTIAL kink. A more
+# negative value means wives in Republican counties flatten their hours more
+# sharply at the breadwinner threshold.
+#
+# SAMPLE CAVEAT, stated up front: this is identified only where county is
+# identified AND vote data exists (2012-2020, ~56% of couples), and county
+# identification is systematically biased toward large/urban counties. The
+# pooled kink in Section 5 uses the full sample; this section does not.
+
+message("\nSection 10: political interaction in the kink ...")
+
+rdd_pol <- pol_dt[
+  !is.na(z_earned) & !is.na(female_weekly_hours) &
+  abs(z_earned - 0.5) >  donut_primary &
+  abs(z_earned - 0.5) <= rdd_bw
+]
+rdd_pol[, z_c    := z_earned - 0.5]
+rdd_pol[, D      := as.integer(z_c >= 0)]
+rdd_pol[, D_zc   := D * z_c]
+rdd_pol[, rep    := as.integer(political == "Republican-majority")]
+rdd_pol[, year_f := factor(YEAR)]
+
+message("  interaction sample: ", format(nrow(rdd_pol), big.mark = ","),
+        " couples (", format(rdd_pol[rep == 1, .N], big.mark = ","), " Republican-majority)")
+
+fit_int_hours <- lm(female_weekly_hours ~ (z_c + D + D_zc) * rep + year_f,
+                    data = rdd_pol, weights = HHWT)
+fit_int_emp   <- lm(as.integer(female_empstat == 1) ~ (z_c + D + D_zc) * rep + year_f,
+                    data = rdd_pol, weights = HHWT)
+
+extract_int <- function(fit, label) {
+  s <- summary(fit)$coefficients
+  want <- c("D_zc", "D_zc:rep", "D", "D:rep")
+  want <- want[want %in% rownames(s)]
+  data.table(
+    outcome  = label,
+    term     = want,
+    meaning  = c("D_zc" = "kink, Democratic counties",
+                 "D_zc:rep" = "DIFFERENTIAL kink in Rep counties",
+                 "D" = "jump, Democratic counties",
+                 "D:rep" = "differential jump in Rep counties")[want],
+    estimate = round(s[want, "Estimate"], 3),
+    se       = round(s[want, "Std. Error"], 3),
+    p_value  = round(s[want, "Pr(>|t|)"], 4)
+  )
+}
+
+pol_int_results <- rbindlist(list(
+  extract_int(fit_int_hours, "Wife weekly hours"),
+  extract_int(fit_int_emp,   "Wife employed (0/1)")
+))
+pol_int_results[, sig := fcase(p_value < 0.001, "***", p_value < 0.01, "**",
+                               p_value < 0.05, "*", default = "")]
+
+message("\nPolitical interaction in the donut kink RDD:")
+print(pol_int_results)
+message("\n  Read: 'DIFFERENTIAL kink' is the Rep-Dem difference. Negative and")
+message("  significant => wives in Republican counties pull back hours MORE")
+message("  sharply at the breadwinner threshold, i.e. the behavioural response")
+message("  differs, not merely the distribution.")
+
+fwrite(pol_int_results,
+       file.path(results_dir, "rdd_political_interaction_kink.csv"))
+message("Wrote: rdd_political_interaction_kink.csv")
