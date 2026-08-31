@@ -36,7 +36,7 @@ years_keep <- c(1970, 1980, 1990, 2000, 2001:2024)
 # filter keeps a non-random subset biased toward large counties.
 #
 # Age/geography restrictions deliberately UNCHANGED from the original pipeline.
-# Every existing analysis (RDD, married-household suite, OLS, frontier merge)
+# Every existing analysis (RDD, married-household suite, OLS)
 # is built on these, so altering them would silently shift published numbers.
 # Known caveat, unchanged: the county filter (COUNTYICP IS NOT NULL) keeps only
 # PUMAs where county is identified, which is a non-random subset biased toward

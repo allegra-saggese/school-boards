@@ -25,7 +25,7 @@ source("R/paths.R")
 #      is a much stronger claim than imposing it.
 #
 #   3. NORM INTENSITY. Presentation: alpha_eff = alpha(P_j) * g(delta_bar),
-#      where P is an internalised prescription (education, frontier, cohort) and
+#      where P is an internalised prescription (education, cohort) and
 #      g is a social multiplier. Old code used a Dem/Rep dummy. This is a
 #      HOUSEHOLD model; political geography is evidence about heterogeneity in
 #      the norm, not a primitive of it.

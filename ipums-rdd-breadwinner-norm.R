@@ -318,17 +318,12 @@ save_plot("rdd_donut_kink_wife_hours_earned_income.png",
 fwrite(results_primary,
   file.path(results_dir, "rdd_donut_breadwinner_norm_results.csv"))
 
-# ── 9) Hours by income decile & wife's earned share by decile × political × frontier ──
-# Rebuilds the income-elasticity graphs that were previously in /tmp/ (lost on reboot)
-# and adds frontier stratification from Bazzi et al.
+# ── 9) Hours by income decile & wife's earned share by decile × political ──
+# Frontier stratification was removed on 2026-08-30 and now lives in
+# frontier-secondary-analysis.R. These are the base (political-only) versions.
 
-message("\nSection 9: income-decile graphs × frontier ...")
 
-frontier_lu <- fread(
-  file.path(panel_dir, "bazzi_frontier_indicators.csv"),
-  select = c("fips", "is_frontier")
-)
-frontier_lu[, fips := pad_fips(fips)]
+message("\nSection 9: income-decile graphs ...")
 
 decile_cols <- c("YEAR", "HHWT", "fips",
                  "female_weekly_hours", "male_weekly_hours",
@@ -362,65 +357,12 @@ dec_dt[, political := fcase(
   default = NA_character_
 )]
 
-# Merge frontier
-dec_dt[, fips := pad_fips(fips)]
-dec_dt <- merge(dec_dt, frontier_lu, by = "fips", all.x = TRUE)
-dec_dt[, frontier_label := fifelse(is_frontier == 1,
-                                   "Frontier counties",
-                                   "Non-frontier counties")]
-
-# ── 9a) Hours by income decile × political × frontier ─────────────────────────
-
-hours_long <- dec_dt[
-  !is.na(income_decile) & !is.na(political) & !is.na(is_frontier),
-  .(
-    wife_hours    = weighted.mean(female_weekly_hours, HHWT, na.rm = TRUE),
-    husband_hours = weighted.mean(male_weekly_hours,   HHWT, na.rm = TRUE)
-  ),
-  by = .(frontier_label, political, income_decile)
-]
-
-hours_melt <- melt(hours_long,
-  id.vars       = c("frontier_label", "political", "income_decile"),
-  measure.vars  = c("wife_hours", "husband_hours"),
-  variable.name = "spouse",
-  value.name    = "hours"
-)
-hours_melt[, spouse_label := fifelse(spouse == "wife_hours", "Wife", "Husband")]
-hours_melt[, linetype_val := fifelse(spouse == "wife_hours", "solid", "dashed")]
-
+# Shared palette for the political-group graphs below. (Previously defined
+# inside the frontier block removed on 2026-08-30.)
 pol_colors <- c("Democratic-majority" = "#4575b4",
-                "Republican-majority"  = "#d73027")
+                "Republican-majority" = "#d73027")
 
-p_hours_front <- ggplot(
-  hours_melt,
-  aes(x = income_decile, y = hours,
-      color    = political,
-      linetype = spouse_label,
-      group    = interaction(political, spouse_label))
-) +
-  geom_line(linewidth = 1.0) +
-  geom_point(size = 1.8) +
-  facet_wrap(~frontier_label) +
-  scale_x_continuous(breaks = 1:10, labels = paste0("D", 1:10)) +
-  scale_color_manual(values = pol_colors, name = NULL) +
-  scale_linetype_manual(values = c("Wife" = "solid", "Husband" = "dashed"),
-                        name = NULL) +
-  labs(
-    title    = "Weekly hours by income decile: husband & wife × Dem/Rep × frontier",
-    subtitle = "Married opposite-sex pairs, IPUMS 2010-2020; frontier = Bazzi et al. (2025)",
-    x        = "Household income decile (within year)",
-    y        = "Mean weekly hours"
-  ) +
-  theme_minimal(base_size = 11) +
-  theme(legend.position = "bottom",
-        strip.text = element_text(face = "bold"),
-        panel.grid.minor = element_blank())
-save_plot("hours_by_income_decile_husband_wife_dem_vs_rep_frontier.png",
-          { print(p_hours_front) }, width = 2400, height = 1200)
-
-# Also save the base (non-frontier) version of this graph as a permanent replacement
-# for the lost /tmp/three_graphs.R output
+# Permanent replacement for the lost /tmp/three_graphs.R output.
 hours_base <- dec_dt[
   !is.na(income_decile) & !is.na(political),
   .(
@@ -460,44 +402,16 @@ p_hours_base <- ggplot(
 save_plot("hours_by_income_decile_husband_wife_dem_vs_rep.png",
           { print(p_hours_base) }, width = 1800, height = 1200)
 
-# ── 9b) Wife's earned share by decile × political × frontier ──────────────────
+# ── 9b) Wife's earned share by decile × political ────────────────────────
 
 share_dt <- dec_dt[
   female_income_no_transfers > 0 & male_income_no_transfers > 0 &
-  !is.na(income_decile) & !is.na(political) & !is.na(is_frontier)
+  !is.na(income_decile) & !is.na(political)
 ]
 share_dt[, z_earned_dec := female_income_no_transfers /
            (female_income_no_transfers + male_income_no_transfers)]
 
-share_agg <- share_dt[, .(
-  wife_earned_share = weighted.mean(z_earned_dec, HHWT, na.rm = TRUE)
-), by = .(frontier_label, political, income_decile)]
-
-p_share_front <- ggplot(
-  share_agg,
-  aes(x = income_decile, y = wife_earned_share * 100,
-      color = political, group = political)
-) +
-  geom_line(linewidth = 1.1) +
-  geom_point(size = 2.2) +
-  facet_wrap(~frontier_label) +
-  scale_x_continuous(breaks = 1:10, labels = paste0("D", 1:10)) +
-  scale_color_manual(values = pol_colors, name = NULL) +
-  scale_y_continuous(labels = function(x) paste0(x, "%")) +
-  labs(
-    title    = "Wife's earned income share by decile: Dem vs Rep × frontier status",
-    subtitle = "Couples with both spouses earning > 0; IPUMS 2010-2020; frontier = Bazzi et al. (2025)",
-    x        = "Household income decile (within year)",
-    y        = "Wife's share of couple earned income (%)"
-  ) +
-  theme_minimal(base_size = 11) +
-  theme(legend.position = "bottom",
-        strip.text = element_text(face = "bold"),
-        panel.grid.minor = element_blank())
-save_plot("share_vs_hh_income_decile_dem_vs_rep_frontier.png",
-          { print(p_share_front) }, width = 2400, height = 1200)
-
-# Base version (no frontier facet) — permanent replacement for lost /tmp/income_vs_share.R
+# Permanent replacement for the lost /tmp/income_vs_share.R output.
 share_base <- share_dt[, .(
   wife_earned_share = weighted.mean(z_earned_dec, HHWT, na.rm = TRUE)
 ), by = .(political, income_decile)]
@@ -523,8 +437,8 @@ p_share_base <- ggplot(
 save_plot("share_vs_hh_income_decile_dem_vs_rep.png",
           { print(p_share_base) }, width = 1800, height = 1200)
 
-message("Section 9 complete: income-decile × frontier graphs saved.")
-
+message("Section 9 complete: income-decile graphs saved.")
+message("Section 9 complete: income-decile graphs saved.")
 message("\nDone. All outputs in data/graphs/ and data/processed/results/.")
 message("Key result files:")
 message("  rdd_donut_density_earned_income_share_all_years.png")
@@ -533,8 +447,6 @@ message("  rdd_donut_kink_wife_hours_earned_income.png")
 message("  rdd_donut_breadwinner_norm_results.csv")
 message("  hours_by_income_decile_husband_wife_dem_vs_rep.png (permanent rebuild)")
 message("  share_vs_hh_income_decile_dem_vs_rep.png (permanent rebuild)")
-message("  *_frontier.png variants for all above")
-
 # ── 10) POLITICAL INTERACTION: is the kink itself sharper in Rep counties? ────
 # The project plan has listed this as "designed, not yet run" throughout. The
 # density ratios (Section 4) show MORE bunching below 0.5 in Republican counties

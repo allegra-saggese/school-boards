@@ -35,7 +35,7 @@ source("R/paths.R")
 #
 # Reuses the SHARED pair panel and donut-RDD design from
 # ipums-rdd-breadwinner-norm.R (same donut_primary/rdd_bw, same political-group
-# and frontier merges) rather than rebuilding a BKP-specific sample — T1-T3 are
+# merges) rather than rebuilding a BKP-specific sample — A-C are
 # meant to extend "our design," not replicate BKP's.
 #
 # A — income-share decomposition: wife's share of (a) labor earnings,
@@ -53,8 +53,9 @@ source("R/paths.R")
 #   noisy reported income), the hourly-wage version should do more work.
 #
 # C — cultural/income-elastic heterogeneity: stratify A/B by county
-#   political lean and frontier-culture status (Bazzi et al.), reusing the
-#   existing political-group and frontier merges.
+#   political lean. REMOVED 2026-08-30 — superseded by T2
+#   (ipums-t2-empirical-quadrant.R), which does this properly with state fixed
+#   effects and county-clustered SEs.
 #
 # Retires the old INCTOT - INCSS - INCWELFR measure (incoherent: leaves
 # capital income and non-SS/welfare transfers in) in favor of the explicit
@@ -64,7 +65,6 @@ source("R/paths.R")
 # ── 0) Config (matches ipums-rdd-breadwinner-norm.R) ──────────────────────
 donut_primary <- 0.02
 rdd_bw        <- 0.20
-c_years      <- 2010:2020   # window with political-group + frontier coverage
 
 panel_dir   <- data_path("processed", "panel")
 results_dir <- data_path("processed", "results")
@@ -319,93 +319,11 @@ p_t2 <- ggplot(b_plot_sample,
   theme_minimal(base_size = 11)
 save_plot("bkp_augmented_b_hourly_wage_scatter.png", { print(p_t2) }, width = 1800, height = 1200)
 
-# ── 4) T3: stratify A/B by political lean and frontier status ────────────
-
-message("C: cultural/income-elastic heterogeneity ...")
-
-pairs_file_grp <- file.path(panel_dir, "ipums_married_oppositesex_spouse_pairs_with_groups.csv")
-if (!file.exists(pairs_file_grp)) {
-  message("  Skipping T3: ", pairs_file_grp, " not found (run ipums-county-household-analysis.R ",
-          "Section 7 / ipums-rdd-breadwinner-norm.R first).")
-} else {
-  cols_grp <- c("YEAR", "HHWT", "fips", "vote_margin",
-                "female_income_wage_nonneg", "male_income_wage_nonneg",
-                "female_annual_hours", "female_weekly_hours",
-                "male_income_total_nonneg")
-  avail <- names(fread(pairs_file_grp, nrows = 0))
-  grp_dt <- fread(pairs_file_grp, select = intersect(cols_grp, avail), showProgress = FALSE)
-  grp_dt <- grp_dt[YEAR %in% c_years & !is.na(vote_margin)]
-  grp_dt[, political := fcase(
-    vote_margin >  0.05, "Democratic-majority",
-    vote_margin < -0.05, "Republican-majority",
-    default = NA_character_
-  )]
-
-  frontier_lu_file <- file.path(panel_dir, "bazzi_frontier_indicators.csv")
-  has_frontier <- file.exists(frontier_lu_file)
-  if (has_frontier) {
-    frontier_lu <- fread(frontier_lu_file, select = c("fips", "is_frontier"))
-    # Same leading-zero hazard as the political merge: fread types these codes
-    # as integer, so as.character() would give "6037" against the panel's
-    # "06037" and silently drop every state numbered 01-09.
-    frontier_lu[, fips := pad_fips(fips)]
-    grp_dt[, fips := pad_fips(fips)]
-    grp_dt <- merge(grp_dt, frontier_lu, by = "fips", all.x = TRUE)
-  } else {
-    message("  ", frontier_lu_file, " not found — T3 will report political stratification only (no frontier).")
-    grp_dt[, is_frontier := NA_integer_]
-  }
-
-  grp_dt[, z_labor := fifelse(
-    female_income_wage_nonneg > 0 & male_income_wage_nonneg > 0,
-    female_income_wage_nonneg / (female_income_wage_nonneg + male_income_wage_nonneg),
-    NA_real_
-  )]
-
-  grp_dt[!is.na(political) & !is.na(z_labor),
-         # fifelse(is_frontier == 1, ...) returns NA when is_frontier is NA
-         # (counties absent from the Bazzi lookup), producing labels like
-         # "Republican-majority NA". Those counties have unknown frontier
-         # status, not a known one — label them explicitly so they are visibly
-         # a coverage gap rather than silently mixed into a real category.
-         strat_group := if (has_frontier) paste(political, fcase(
-             is.na(is_frontier), "frontier status unknown",
-             is_frontier == 1,   "frontier",
-             default =           "non-frontier"))
-                         else political]
-
-  c_ratios <- rbindlist(lapply(unique(na.omit(grp_dt$strat_group)), function(g) {
-    sub <- grp_dt[strat_group == g & !is.na(z_labor)]
-    r <- below_above_ratio(sub, "z_labor", "HHWT")
-    r[, group := g]
-    r[, n_obs := nrow(sub)]
-    r
-  }))
-  message("C: T1(a) labor-share below/above ratio by political × frontier group:")
-  print(c_ratios[, .(group, ratio = round(ratio, 3), n_obs)])
-  fwrite(c_ratios, file.path(results_dir, "bkp_augmented_c_ratios_by_group.csv"))
-
-  # B's hourly-wage horse race is NOT re-stratified here: the with_groups
-  # panel doesn't carry male_annual_hours (only the base with_kids panel does),
-  # so a correct male_hourly_wage can't be built on this file. T3 reports the
-  # T1 density/ratio stratification only — see claude/future-extensions.md for
-  # the follow-up (add male_annual_hours to the with_groups panel).
-  message("  Note: C stratifies A (income-share cliff) by political × frontier group only. ",
-          "B's hourly-wage horse race is not re-stratified here (with_groups panel lacks ",
-          "male_annual_hours) — see claude/future-extensions.md.")
-
-  p_t3 <- ggplot(c_ratios, aes(x = reorder(group, ratio), y = ratio)) +
-    geom_col(fill = "steelblue4", alpha = 0.85) +
-    geom_hline(yintercept = 1, linetype = "dashed", color = "grey40") +
-    coord_flip() +
-    labs(
-      title    = "C: labor-income-share below/above ratio by political × frontier group",
-      subtitle = "Higher ratio = more couples bunched just below the 0.5 threshold (stronger avoidance)",
-      x = NULL, y = "Below / above ratio"
-    ) +
-    theme_minimal(base_size = 11)
-  save_plot("bkp_augmented_c_ratio_by_group.png", { print(p_t3) }, width = 1800, height = 1100)
-}
+# Section C (stratification by political lean x frontier status) was removed
+# on 2026-08-30. The frontier line is secondary — see
+# frontier-secondary-analysis.R. The culture x wealth question it was
+# reaching for is answered properly in T2 (ipums-t2-empirical-quadrant.R),
+# which has state fixed effects and county-clustered SEs.
 
 message("\nBKP augmented tests complete.")
 message("Outputs: data/graphs/bkp_augmented_*.png, data/processed/results/bkp_augmented_*.csv")

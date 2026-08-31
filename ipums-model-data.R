@@ -1,4 +1,5 @@
 library(data.table)
+set.seed(20260830)   # reproducible residual draws in the wage imputation
 library(DBI)
 library(RSQLite)
 
@@ -49,7 +50,15 @@ source("R/paths.R")
 # -- that asymmetry IS the norm and is invisible in a dual-earner sample.
 # =========================================================
 
-model_years    <- 2010:2020   # calibration window
+# ALL years the model's inputs exist for. 1970 is excluded because INCINVST is
+# absent that year, so y0 (non-labour income) cannot be constructed; 1980
+# onward has full coverage. The former 2010:2020 window was an arbitrary
+# calibration choice, not a data constraint -- T3 uses no county or political
+# data, so it is not bound by T2's 2012-2020 window.
+model_years    <- c(1980L, 1990L, 2000L, 2001:2024)
+# Override for testing, e.g. MODEL_YEARS=1980,2019
+if (nzchar(Sys.getenv("MODEL_YEARS")))
+  model_years <- as.integer(strsplit(Sys.getenv("MODEL_YEARS"), ",")[[1]])
 min_ann_hours  <- 260L        # 5 hrs/wk year-round: below this a wage is not measured
 lump_income    <- 100000      # see "lump-sum exclusion" below
 min_cell_n     <- 30L
@@ -106,8 +115,20 @@ pull_year <- function(yr) {
   d
 }
 
+# ── STREAM year by year ──────────────────────────────────────────────────────
+# Holding 28 years in memory at once exceeds R's 24 GB vector limit (this OOMed
+# on the first attempt). Every downstream step is year-separable -- the wage
+# trims were already per-year, and the Mincer equation is now fitted per year
+# too (see below) -- so each year is processed end to end and appended to disk.
 message("Building model dataset for ", min(model_years), "-", max(model_years), " ...")
-allp <- rbindlist(lapply(model_years, function(y) { message("  ", y); pull_year(y) }))
+
+out_file <- file.path(panel_dir, "model_input_households.csv")
+if (file.exists(out_file)) file.remove(out_file)
+first_year <- TRUE
+
+for (.yr in model_years) {
+message("  ", .yr)
+allp <- pull_year(.yr)
 
 w <- allp[SEX == 2]; h <- allp[SEX == 1]
 
@@ -152,10 +173,25 @@ pairs[, m_w_obs := fifelse(m_h >= min_ann_hours, m_lab / m_h, NA_real_)]
 
 # Floor at half that year's federal minimum wage. A fixed dollar floor is
 # meaningless across decades ($3.10 in 1980 vs $7.25 in 2019).
-fed_min <- data.table(
-  YEAR = 2010:2020,
-  minw = c(7.25,7.25,7.25,7.25,7.25,7.25,7.25,7.25,7.25,7.25,7.25))
+# Full federal minimum wage history. Indexed on the INCOME REFERENCE year
+# (YEAR - 1), since ACS and census income questions cover the previous 12
+# months. Statutory changes: $1.60 (1968), $2.00 (May 1974), $2.10 (1975),
+# $2.30 (1976), $2.65 (1978), $2.90 (1979), $3.10 (1980), $3.35 (1981),
+# $3.80 (Apr 1990), $4.25 (Apr 1991), $4.75 (Oct 1996), $5.15 (Sep 1997),
+# $5.85 (Jul 2007), $6.55 (Jul 2008), $7.25 (Jul 2009, unchanged since).
+minw_by_income_year <- data.table(
+  iyear = 1969:2023,
+  minw  = c(rep(1.60, 5),                       # 1969-1973
+            2.00, 2.10, 2.30, 2.30, 2.65, 2.90, # 1974-1979
+            3.10, rep(3.35, 9),                 # 1980, 1981-1989
+            3.80, rep(4.25, 5),                 # 1990, 1991-1995
+            4.75, rep(5.15, 10),                # 1996, 1997-2006
+            5.85, 6.55, rep(7.25, 15)))         # 2007, 2008, 2009-2023
+stopifnot(nrow(minw_by_income_year) == length(1969:2023))
+fed_min <- minw_by_income_year[, .(YEAR = iyear + 1L, minw)]
 pairs <- merge(pairs, fed_min, by = "YEAR", all.x = TRUE)
+if (any(is.na(pairs$minw))) stop("federal minimum wage missing for year(s): ",
+    paste(sort(unique(pairs[is.na(minw)]$YEAR)), collapse = ", "))
 pairs[, f_w_obs := fifelse(!is.na(f_w_obs) & f_w_obs < 0.5 * minw, NA_real_, f_w_obs)]
 pairs[, m_w_obs := fifelse(!is.na(m_w_obs) & m_w_obs < 0.5 * minw, NA_real_, m_w_obs)]
 # Top: within-year percentile trim (percentile, not a fixed dollar cap).
@@ -183,10 +219,17 @@ race3 <- function(r, hp) fcase(is.na(r) | is.na(hp), NA_character_,
 pairs[, `:=`(f_e5 = educ5(f_educ), m_e5 = educ5(m_educ),
              f_r3 = race3(f_race, f_hisp), m_r3 = race3(m_race, m_hisp))]
 
+# Fitted SEPARATELY EACH YEAR. The previous version pooled all years with only
+# year fixed effects, holding the returns to education and experience constant
+# across the whole sample. Over 1980-2024 that is untenable -- the college wage
+# premium roughly doubled over this period -- and it would push that
+# mis-specification straight into the imputed wages for non-workers, who are
+# exactly the households at the corner. factor(YEAR) is dropped because it is
+# collinear within a single year.
 fit_wage <- function(dt, wcol, acol, ecol, rcol) {
   d <- dt[!is.na(get(wcol)) & get(wcol) > 0]
   lm(log(get(wcol)) ~ poly(get(acol), 2) + factor(get(ecol)) + factor(get(rcol)) +
-       factor(STATEICP) + factor(YEAR), data = d, weights = d$HHWT)
+       factor(STATEICP), data = d, weights = d$HHWT)
 }
 mw_f <- fit_wage(pairs, "f_w_obs", "f_age", "f_e5", "f_r3")
 mw_m <- fit_wage(pairs, "m_w_obs", "m_age", "m_e5", "m_r3")
@@ -195,11 +238,48 @@ message("  Mincer wage eq (wife):    n = ", format(nobs(mw_f), big.mark = ","),
 message("  Mincer wage eq (husband): n = ", format(nobs(mw_m), big.mark = ","),
         "  R2 = ", round(summary(mw_m)$r.squared, 3))
 
+# IMPUTE FROM THE PREDICTIVE DISTRIBUTION, NOT THE POINT PREDICTION.
+# exp(X'b) alone assigns every non-worker a near-median wage. Measured on 2003,
+# that halved the dispersion of imputed wages relative to observed ones
+# (SD of log 0.301 vs 0.601) and raised the BOTTOM of the distribution by 40%
+# (p10 $9.06 imputed vs $6.49 observed). With the Mincer R2 only ~0.23, three
+# quarters of the variance was being discarded.
+#
+# That compression is not cosmetic. It erases both tails of the non-worker wage
+# distribution: the low-wage women who do not work because work does not pay,
+# and the high-wage women who do not work despite it paying. The model then
+# sees non-workers with near-median wages, concludes they should be working,
+# and under-predicts non-participation at the bottom of the distribution.
+#
+# Adding a residual draw restores the dispersion the regression threw away and
+# also removes the retransformation bias -- exp(X'b) is not an unbiased
+# estimate of E[w|X] under log-linearity in any case.
+#
+# Residuals are BOOTSTRAPPED from the fitted residuals rather than drawn
+# normal, so any skewness in the wage distribution is preserved.
+#
+# NOTE what this does NOT fix: selection. The residuals come from a
+# workers-only regression, so if workers are positively selected the whole
+# imputed distribution is still shifted up. This restores the VARIANCE, not the
+# MEAN. A Heckman correction would be the next step -- with children as the
+# exclusion restriction, never the husband's earnings, since the model claims
+# his earnings act on her participation through the norm.
+draw_resid <- function(model, k) {
+  r <- residuals(model)
+  r[sample.int(length(r), k, replace = TRUE)]
+}
 pred_ok_f <- !is.na(pairs$f_e5) & !is.na(pairs$f_r3)
 pred_ok_m <- !is.na(pairs$m_e5) & !is.na(pairs$m_r3)
 pairs[, f_w_hat := NA_real_]; pairs[, m_w_hat := NA_real_]
-pairs[pred_ok_f, f_w_hat := exp(predict(mw_f, newdata = .SD)), .SDcols = names(pairs)]
-pairs[pred_ok_m, m_w_hat := exp(predict(mw_m, newdata = .SD)), .SDcols = names(pairs)]
+pairs[pred_ok_f, f_w_hat := exp(predict(mw_f, newdata = .SD) +
+                                draw_resid(mw_f, sum(pred_ok_f))), .SDcols = names(pairs)]
+pairs[pred_ok_m, m_w_hat := exp(predict(mw_m, newdata = .SD) +
+                                draw_resid(mw_m, sum(pred_ok_m))), .SDcols = names(pairs)]
+# Guard against absurd draws in the extreme tail of the residual distribution.
+for (cc in c("f_w_hat", "m_w_hat")) {
+  hi <- pairs[, quantile(get(cc), 0.999, na.rm = TRUE)]
+  pairs[get(cc) > hi, (cc) := hi]
+}
 
 pairs[, f_w := fifelse(!is.na(f_w_obs), f_w_obs, f_w_hat)]
 pairs[, m_w := fifelse(!is.na(m_w_obs), m_w_obs, m_w_hat)]
@@ -219,8 +299,13 @@ out <- pairs[, .(YEAR, SERIAL, HHWT, STATEICP, COUNTYICP, nchild,
                  f_h, m_h, f_lab, m_lab, f_w, m_w, f_w_obs, m_w_obs,
                  f_w_predicted, m_w_predicted, f_wks_imp,
                  y0, y, z_W, regime)]
-f <- file.path(panel_dir, "model_input_households.csv")
-fwrite(out, f)
+fwrite(out, out_file, append = !first_year)
+first_year <- FALSE
+rm(allp, w, h, wf, hs, pairs, out); invisible(gc())
+}   # end per-year loop
+
+f <- out_file
+out <- fread(out_file, showProgress = FALSE)   # reload for the summary below
 
 message("
 === model dataset ===")
