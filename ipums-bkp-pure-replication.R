@@ -183,32 +183,11 @@ detect_1970_samples <- function() {
 }
 samples_1970 <- detect_1970_samples()
 
-# lm() + vcovCL on the full multi-million-row, multi-year pooled sample (with
-# ~90 dummy/continuous RHS columns) is impractically slow/memory-heavy. Fit the
-# Table 2/3 regressions on a capped random subsample instead — the LFP-rate
-# sanity check still uses the full (uncapped) sample. Purely a compute-time
-# guard, not a scope cut: standard practice for large weighted microdata.
 max_reg_n <- 250000L
 set.seed(42)
 
 # ── Labor income (BKP's income concept) ───────────────────────────────────
-# BKP define individual income as LABOR income: wages/salary plus
-# self-employment. IPUMS splits self-employment across variables and eras:
-#   INCBUS + INCFARM  -> 1950-2000 (business and farm reported separately)
-#   INCBUS00          -> 2000 onward (business and farm combined)
-# 2000 carries both; we prefer INCBUS00 where present so the ACS era and the
-# 2000 census use the same definition.
-#
-# Two data hazards handled here:
-#  1) IPUMS N/A sentinels. Income variables use 9999999/999999/999998-style
-#     codes for "not in universe" / missing, NOT real dollars. Verified on the
-#     old extract: INCWAGE = 999999 occurs for every under-16 record and none
-#     at 16+, so the adult age restrictions already excluded them — but the
-#     guard belongs in code, not in an age filter that might later change.
-#  2) INCBUS/INCFARM can be legitimately NEGATIVE (business/farm losses).
-#     So we must not clamp the components at zero individually; we sum first,
-#     then clamp the total at zero (someone whose only income is a $5k loss
-#     has zero labor income, not negative).
+
 na_sentinel <- function(x) {
   # IPUMS income N/A / missing codes are large repunit-style values.
   fifelse(x %in% c(999999, 999998, 9999999, 9999998, -9999999), NA_real_, as.numeric(x))
@@ -313,15 +292,8 @@ cluster_se <- function(model, cluster_var) {
 # ── 2) Spouse-pair builder (BKP-style: no county filter, no household-size
 #      restriction beyond a mutual SPLOC link) ──────────────────────────────
 
-# PERFORMANCE NOTE: do NOT do this spouse match as a single SQL self-join.
-# ipums_table has no index on the join keys (YEAR, SAMPLE, SERIAL, PERNUM/
-# SPLOC), but it does have idx_ipums_age_sex (YEAR, AGE, SEX). Given both, the
-# SQLite planner picks the age index for BOTH sides of a self-join and then
-# nested-loops the match — billions of row comparisons, effectively a hang
-# (measured: >2.75 hours for one year, vs ~3.5s for the approach below).
-# Instead: two independent indexed range scans (fast, uses idx_ipums_age_sex),
-# then match in-memory with data.table. Building a join-key index on a 42GB
-# table is the other fix, but costs disk we don't have.
+
+# spousal match 
 pull_person_side <- function(yr, sex, age_range, extra_where = "") {
   # SPLOC > 0 pre-filters to spouse-linked people before the column fetch —
   # lossless here, since only mutually-linked spouses can form a pair.

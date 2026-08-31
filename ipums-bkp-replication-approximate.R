@@ -17,14 +17,7 @@ source("R/paths.R")
 # 0.5 mass, and its "Table 3 equivalent" is a naive D(share>0.5) regression, not
 # BKP's actual Table 2/3 specification (an LPM on PrWifeEarnsMore, a demographic-
 # cell potential-income measure).
-#
-# It's kept as-is (outputs already referenced in project notes) as an earlier,
-# approximate comparison. For the corrected, closer replication, see:
-#   - ipums-bkp-pure-replication.R    (Figure 1/2, Table 2/3, matching BKP's
-#                                       actual sample/spec, extended through 2023)
-#   - ipums-bkp-augmented-tests.R     (T1-T3: income-share decomposition, hourly-
-#                                       wage decomposition, cultural heterogeneity)
-#
+
 # Key differences from our donut RDD (ipums-rdd-breadwinner-norm.R):
 #
 #   BKP                             | Our design
