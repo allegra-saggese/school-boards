@@ -71,19 +71,36 @@ Rscript t3/t3-figures.R
 to `logs/` and writing a pass/fail table to `logs/summary.txt`:
 
 ```bash
-./run-pipeline.sh          # everything
-./run-pipeline.sh t3       # only scripts matching "t3"
-./run-pipeline.sh --list   # print the run order
+./run-pipeline.sh            # the analysis layer (21 scripts)
+./run-pipeline.sh --rebuild  # also rebuild the panels first (slow)
+./run-pipeline.sh t3         # only scripts matching "t3"
+./run-pipeline.sh --list     # print the run order
 ```
 
-It deliberately **excludes three scripts** that have external side effects or
-need a key the analysis layer does not — run those by hand:
+`--rebuild` adds the two panel-construction scripts. They are off by default
+because they **overwrite large derived inputs** that everything else reads, and
+a failure part-way leaves a truncated file:
+
+| Opt-in via `--rebuild` | Rebuilds |
+|---|---|
+| `ipums-county-household-analysis.R` | The spouse-pair panel |
+| `ipums-model-data.R` | `model_input_households.csv` (~3GB) |
+
+Four scripts are **never** run by it — external side effects, or a key the
+analysis layer does not need. Run these by hand:
 
 | Excluded | Why |
 |---|---|
 | `ipums-bkp-build-database.R` | Re-downloads the extract and rebuilds the ~19GB SQLite |
 | `ipums-submit-housing-extract.R` | Submits a *new* IPUMS extract request; their API has no delete endpoint |
+| `lfpr-panel-analysis.R` | Needs `CENSUS_API_KEY` and re-downloads the ACS |
 | `fred-county-panel.R` | Needs `FRED_API_KEY` and re-downloads |
+
+`T3_YEARS` defaults to the full 1980–2024 series. Narrowing it is unsafe:
+`t3-estimate-v2.R` writes a dated estimates file that every downstream T3
+script reads via `read_newest()`, so a partial run silently shadows the full
+series — and `t3-comparative-statics.R` hardcodes `YR <- 2019` and fails
+outright without it.
 
 ---
 

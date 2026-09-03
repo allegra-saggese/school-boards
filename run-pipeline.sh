@@ -2,28 +2,53 @@
 # =============================================================================
 # Re-run the analysis pipeline end to end, in dependency order.
 #
-#   ./run-pipeline.sh            run everything
+#   ./run-pipeline.sh            run the analysis layer
+#   ./run-pipeline.sh --rebuild  also rebuild the panels first (slow, see below)
 #   ./run-pipeline.sh t3         run only scripts whose path matches "t3"
 #   ./run-pipeline.sh --list     print the run order and exit
 #
 # Logs go to logs/<script>.log, one per script, and a pass/fail table is
 # written to logs/summary.txt. A non-zero exit code in that table is a failure.
 #
-# NOT RUN HERE — these three have external side effects or need a key that the
-# analysis scripts do not, so run them deliberately, by hand:
+# --rebuild ADDS the two panel-construction scripts. They are off by default
+# because they OVERWRITE large derived inputs everything else reads, and a
+# failure part-way leaves a truncated file:
+#   ipums-county-household-analysis.R  rebuilds the spouse-pair panel
+#   ipums-model-data.R                 rebuilds model_input_households.csv (~3GB)
+#
+# NOT RUN HERE AT ALL — external side effects, or a key the analysis layer does
+# not need. Run these deliberately, by hand:
 #   ipums-bkp-build-database.R     re-downloads IPUMS extract #4 and rebuilds
 #                                  the ~19GB data/interim/ipums_bkp.sqlite
 #   ipums-submit-housing-extract.R submits a NEW extract request to IPUMS;
 #                                  their API has no delete endpoint, so a test
 #                                  run leaves a real orphaned extract behind
+#   lfpr-panel-analysis.R          needs CENSUS_API_KEY, re-downloads the ACS
 #   fred-county-panel.R            needs FRED_API_KEY and re-downloads
+#
+# t3-model-solver.R is a library, sourced by the other T3 scripts, never run.
 #
 # Everything below reads data already on disk.
 # =============================================================================
 cd "${0:A:h}" || exit 1
 
 LOG=logs
-FILTER="${1:-}"
+REBUILD=0
+FILTER=""
+for arg in "$@"; do
+  case "$arg" in
+    --rebuild) REBUILD=1 ;;
+    --list)    FILTER="--list" ;;
+    *)         FILTER="$arg" ;;
+  esac
+done
+
+# Panel construction. Opt-in via --rebuild: these overwrite large derived
+# inputs that every other script reads.
+REBUILD_SCRIPTS=(
+  ipums-county-household-analysis.R
+  ipums-model-data.R
+)
 
 SCRIPTS=(
   # build layer — shared, feeds more than one part
@@ -52,6 +77,8 @@ SCRIPTS=(
   t3/t3-estimate-v3.R
   t3/t3-figures.R
 )
+
+(( REBUILD )) && SCRIPTS=($REBUILD_SCRIPTS $SCRIPTS)
 
 if [[ "$FILTER" == "--list" ]]; then
   printf '%s\n' $SCRIPTS
