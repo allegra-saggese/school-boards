@@ -65,6 +65,26 @@ scripts run correctly **from any working directory**, including from inside
 Rscript t3/t3-figures.R
 ```
 
+### Running everything
+
+`run-pipeline.sh` runs every analysis script in dependency order, logging each
+to `logs/` and writing a pass/fail table to `logs/summary.txt`:
+
+```bash
+./run-pipeline.sh          # everything
+./run-pipeline.sh t3       # only scripts matching "t3"
+./run-pipeline.sh --list   # print the run order
+```
+
+It deliberately **excludes three scripts** that have external side effects or
+need a key the analysis layer does not — run those by hand:
+
+| Excluded | Why |
+|---|---|
+| `ipums-bkp-build-database.R` | Re-downloads the extract and rebuilds the ~19GB SQLite |
+| `ipums-submit-housing-extract.R` | Submits a *new* IPUMS extract request; their API has no delete endpoint |
+| `fred-county-panel.R` | Needs `FRED_API_KEY` and re-downloads |
+
 ---
 
 ## Build scripts (repository root)

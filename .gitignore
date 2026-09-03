@@ -10,3 +10,6 @@ data/graphs/
 *.sqlite
 .Renviron
 .Renviron.local
+
+# pipeline runner output
+logs/
