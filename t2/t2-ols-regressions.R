@@ -4,8 +4,14 @@ library(readr)
 library(ggplot2)
 library(broom)
 
-source("R/paths.R")
-source("functions.R")
+source(here::here("_setup.R"))
+
+# T2 — descriptive OLS, county and household level. No causal claims;
+# SEs clustered at the county (FIPS) level.
+# Inputs : data/processed/panel/*_lfpr_panel_with_groups.csv
+#          data/processed/panel/ipums_married_oppositesex_spouse_pairs_with_groups.csv
+# Outputs: data/processed/results/ols_county_female_lfpr_results.csv
+#          data/processed/results/ols_hh_hours_results.csv
 
 # =========================================================
 # 0) Configuration

@@ -3,8 +3,11 @@ set.seed(20260830)   # reproducible residual draws in the wage imputation
 library(DBI)
 library(RSQLite)
 
-source("functions.R")
-source("R/paths.R")
+source(here::here("_setup.R"))
+
+# Builds the household-level inputs for the T3 model.
+# Input  : data/interim/ipums_bkp.sqlite
+# Output : data/processed/panel/model_input_households.csv
 
 # =========================================================
 # Model dataset: inputs for the household utility model
@@ -24,14 +27,15 @@ source("R/paths.R")
 #        capital income does not scale with hours -- and (b) not be constructed
 #        from the household's own chosen hours where those hours are
 #        uninformative, or the FOC that pins preferences becomes circular.
-#        [previously: (INCTOT - INCSS - INCWELFR)/hours, which contains capital
-#        income and inflates the implied wage for asset-holders]
+#        A wage built from (INCTOT - INCSS - INCWELFR)/hours would fail (a):
+#        it carries capital income and inflates the implied wage for
+#        asset-holders.
 #
 #  y0    Income entering the budget that does NOT respond to hours: capital,
 #        retirement, and transfer income.
-#        [previously: a residual, hhincome - both spouses' income, which
-#        double-counted -- capital income sat inside w*h AND was subtracted
-#        from y0]
+#        Built directly, not as the residual hhincome - both spouses' income:
+#        that double-counts, since capital income sits inside w*h AND is
+#        subtracted from y0.
 #
 #  z_W   Wife's share of LABOUR earnings, matching the model's own definition
 #        w_f*h_f / (w_m*h_m + w_f*h_f). No capital income.

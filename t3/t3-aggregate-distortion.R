@@ -13,23 +13,26 @@
 # her to him. Reporting only her loss overstates the net effect on household
 # labour supply, so his gain is reported alongside it.
 #
-# This replaces the crude "exposure x wedge" index with an actual quantity:
-# hours, integrated over the whole distribution rather than approximated at the
-# mean. HHWT scales the sample to the population, so the totals are national.
+# The reported quantity is hours, integrated over the whole distribution rather
+# than approximated at the mean. HHWT scales the sample to the population, so
+# the totals are national.
 #
 # NOTE the distortion is purely INTENSIVE. The corner share is invariant to
 # alpha (established separately), so switching the norm off moves nobody into
 # or out of the labour force -- it only changes hours among those already
 # working. That is the same hours-only property, showing up in the aggregate.
 # =============================================================================
-suppressMessages({library(data.table); source("t3-model-solver.R")})
-source("functions.R"); source("R/paths.R")
+source(here::here("_setup.R"))
+
+# Inputs : data/processed/results/*_t3_estimates_v2_by_year.csv
+#          data/processed/panel/model_input_households.csv
+# Output : data/processed/results/YYYY-MM-DD_t3_aggregate_distortion.csv
+suppressMessages({library(data.table); source(here::here("t3", "t3-model-solver.R"))})
 
 panel_dir   <- data_path("processed", "panel")
 results_dir <- data_path("processed", "results")
 
-f   <- sort(list.files(results_dir, "t3_estimates_v2_by_year.csv$", full.names = TRUE))
-est <- fread(f[length(f)])
+est <- read_newest(results_dir, "t3_estimates_v2_by_year.csv$")
 dat <- fread(file.path(panel_dir, "model_input_households.csv"), showProgress = FALSE)
 dat <- dat[is.finite(f_w) & is.finite(m_w) & f_w > 0 & m_w > 0 & is.finite(y0) &
            is.finite(f_h) & is.finite(m_h)]

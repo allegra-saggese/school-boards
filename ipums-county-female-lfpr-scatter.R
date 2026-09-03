@@ -1,8 +1,11 @@
 library(data.table)
 library(ggplot2)
 
-source("R/paths.R")
-source("functions.R")
+source(here::here("_setup.R"))
+
+# Exploratory descriptive: county female LFPR scatter.
+# Input  : data/processed/panel/ipums_married_oppositesex_spouse_pairs_with_kids.csv
+# Outputs: data/graphs/, data/processed/results/
 
 weighted_mean_safe <- function(x, w) {
   ok <- is.finite(x) & !is.na(x) & is.finite(w) & !is.na(w) & w > 0

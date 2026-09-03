@@ -5,7 +5,11 @@ library(readr)
 library(lubridate)
 library(fredr)
 
-source("R/paths.R")
+source(here::here("_setup.R"))
+
+# FRED county series (requires FRED_API_KEY).
+# Outputs: data/processed/fred/series_labor_force.csv, series_pcpi.csv,
+#          series_population.csv, fred_county_laborforce_pcpi_panel.csv
 
 # ---- Configuration set up ----
 start_year <- 2000

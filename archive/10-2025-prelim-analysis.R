@@ -7,8 +7,7 @@ library(purrr)
 library(knitr)
 library(R.utils)
 
-source("R/paths.R")
-source("functions.R")
+source(here::here("_setup.R"))
 
 # =========================================================
 # 0) Setup and input files

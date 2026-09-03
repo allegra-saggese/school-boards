@@ -3,7 +3,7 @@
 #   LNS11300002  Women, 16+, monthly, seasonally adjusted
 # Source: FRED / BLS.
 suppressMessages({library(data.table); library(ggplot2); library(readxl)})
-source("functions.R"); source("R/paths.R")
+source(here::here("_setup.R"))
 
 men <- as.data.table(read_excel("~/Downloads/LNS11300001.xlsx", sheet = "Monthly"))
 setnames(men, c("date", "lfpr")); men[, sex := "Men"]

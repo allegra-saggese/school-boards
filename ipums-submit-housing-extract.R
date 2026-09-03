@@ -22,7 +22,11 @@
 # =============================================================================
 
 library(ipumsr)
-source("R/paths.R")
+source(here::here("_setup.R"))
+
+# Submits the supplementary IPUMS housing-wealth extract (usa:6) for T2.
+# Requires IPUMS_API_KEY. Run once, then wait for IPUMS before the merge.
+# Output : data/interim/housing_extract_number.rds
 
 api_key <- Sys.getenv("IPUMS_API_KEY")
 if (!nzchar(api_key)) {

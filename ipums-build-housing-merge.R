@@ -20,8 +20,11 @@
 
 library(ipumsr)
 library(data.table)
-source("functions.R")
-source("R/paths.R")
+source(here::here("_setup.R"))
+
+# Builds the housing-wealth lookup for T2, one row per household.
+# Input  : the downloaded usa:6 extract
+# Output : data/processed/panel/ housing lookup keyed on YEAR + SAMPLE + SERIAL
 
 api_key <- Sys.getenv("IPUMS_API_KEY")
 if (!nzchar(api_key)) {

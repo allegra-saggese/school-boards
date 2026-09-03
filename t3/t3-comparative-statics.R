@@ -19,8 +19,12 @@
 #    places an upper bound on how much alpha can vary across couples -- the data
 #    tell us how heterogeneous the norm can be.
 # =============================================================================
-suppressMessages({library(data.table); source("t3-model-solver.R")})
-source("functions.R"); source("R/paths.R")
+source(here::here("_setup.R"))
+
+# Inputs : data/processed/results/*_t3_estimates_v2_by_year.csv
+#          data/processed/panel/model_input_households.csv
+# Outputs: data/processed/results/ (elasticities, norm-incidence tables)
+suppressMessages({library(data.table); source(here::here("t3", "t3-model-solver.R"))})
 set.seed(20260831)
 results_dir <- data_path("processed","results")
 
@@ -28,7 +32,7 @@ YR <- 2019
 d <- fread(data_path("processed","panel","model_input_households.csv"), showProgress=FALSE)
 d <- d[YEAR==YR & is.finite(f_w)&is.finite(m_w)&f_w>0&m_w>0&is.finite(y0)&is.finite(f_h)&is.finite(m_h)]
 d <- d[sample(.N, min(120000,.N))]
-est <- fread(sort(list.files(results_dir,"t3_estimates_v2_by_year.csv$",full.names=TRUE))[1])
+est <- read_newest(results_dir, "t3_estimates_v2_by_year.csv$")
 A <- est[YEAR==YR]$alpha; Fd <- est[YEAR==YR]$F_dollars
 int  <- d[f_h>0&m_h>0]
 Cb   <- weighted.mean(int$m_w*int$m_h+int$f_w*int$f_h+int$y0, int$HHWT)
