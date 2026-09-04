@@ -6,8 +6,16 @@ library(broom)
 
 source(here::here("_setup.R"))
 
-# T2 — descriptive OLS, county and household level. No causal claims;
-# SEs clustered at the county (FIPS) level.
+# T2 — descriptive OLS, county and household level. No causal claims.
+#
+# Every model is reported TWICE: once with classical OLS SEs and once with
+# cluster-robust SEs, stacked in the output with an se_type column. The
+# political treatment (vote_margin / conservative) varies at the COUNTY level,
+# so classical SEs understate uncertainty; the clustered rows are the ones to
+# report. Household models are additionally clustered at the state level, which
+# is the more conservative choice if the vote margin is spatially correlated
+# across counties within a state.
+#
 # Inputs : data/processed/panel/*_lfpr_panel_with_groups.csv
 #          data/processed/panel/ipums_married_oppositesex_spouse_pairs_with_groups.csv
 # Outputs: data/processed/results/ols_county_female_lfpr_results.csv
@@ -17,7 +25,6 @@ source(here::here("_setup.R"))
 # 0) Configuration
 # =========================================================
 # All regressions are descriptive OLS — no causal claims.
-# SEs clustered at the county (FIPS) level.
 # Goal: verify that descriptive patterns are robust to controls
 # and get effect sizes to anchor the intra-HH bargaining model.
 #
@@ -35,18 +42,33 @@ panel_dir   <- data_path("processed", "panel")
 results_dir <- data_path("processed", "results")
 ensure_dir(results_dir)
 
-cluster_se <- function(model, cluster_var) {
-  # Heteroskedasticity- and cluster-robust SEs using sandwich estimator.
-  # Requires: sandwich, lmtest packages (install if needed).
-  if (!requireNamespace("sandwich", quietly = TRUE) ||
-      !requireNamespace("lmtest", quietly = TRUE)) {
-    message("Install 'sandwich' and 'lmtest' for clustered SEs. Returning OLS SEs.")
-    return(tidy(model))
+suppressPackageStartupMessages({library(sandwich); library(lmtest)})
+
+# Cluster ids for the rows the model ACTUALLY used.
+#
+# lm() drops rows with NA in any model variable, so a cluster vector taken
+# straight from the source data can be longer than the fitted sample and
+# silently misalign every observation with the wrong cluster. Reading the row
+# indices back off the model frame is the only way to guarantee they match.
+cluster_ids <- function(model, data, var) {
+  idx <- as.integer(rownames(model.frame(model)))
+  stopifnot(length(idx) == nobs(model))
+  data[[var]][idx]
+}
+
+# Cluster-robust SEs, keeping the point estimates from the fitted model.
+cluster_se <- function(model, data, var) {
+  tidy(coeftest(model, vcov = vcovCL(model, cluster = cluster_ids(model, data, var))))
+}
+
+# One model, both SE flavours, stacked and labelled.
+both_ses <- function(model, data, model_name, cluster_vars = "fips") {
+  out <- list(tidy(model) %>% mutate(se_type = "classical"))
+  for (v in cluster_vars) {
+    out[[length(out) + 1]] <- cluster_se(model, data, v) %>%
+      mutate(se_type = paste0("clustered_", v))
   }
-  library(sandwich)
-  library(lmtest)
-  coeftest(model, vcov = vcovCL(model, cluster = cluster_var)) %>%
-    tidy()
+  bind_rows(out) %>% mutate(model = model_name)
 }
 
 # =========================================================
@@ -76,15 +98,12 @@ m1b <- lm(lfpr_female ~ (log_income + I(log_income^2)) * vote_margin + year_fac 
 m1c <- lm(lfpr_female ~ factor(income_quintile_national) * conservative + year_fac + state_fac,
           data = panel)
 
-results_1a <- cluster_se(m1a, panel[complete.cases(panel[, c("log_income","vote_margin","state","year")]), "fips"])
-results_1b <- cluster_se(m1b, panel[complete.cases(panel[, c("log_income","vote_margin","state","year")]), "fips"])
-results_1c <- cluster_se(m1c, panel[complete.cases(panel[, c("income_quintile_national","conservative","state","year")]), "fips"])
-
-# Save county-level results
+# state_fac is already absorbed as fixed effects here, so clustering is on
+# county only; a state cluster would be collinear with the state FEs' own level.
 county_ols_out <- bind_rows(
-  results_1a %>% mutate(model = "1a_linear_income_x_votemargin"),
-  results_1b %>% mutate(model = "1b_quad_income_x_votemargin"),
-  results_1c %>% mutate(model = "1c_quintile_x_conservative")
+  both_ses(m1a, panel, "1a_linear_income_x_votemargin"),
+  both_ses(m1b, panel, "1b_quad_income_x_votemargin"),
+  both_ses(m1c, panel, "1c_quintile_x_conservative")
 ) %>%
   filter(!grepl("^year_fac|^state_fac", term))  # drop FE rows for readability
 
@@ -110,30 +129,47 @@ hh <- read_csv(merged_file, show_col_types = FALSE) %>%
     female_working = as.numeric(female_empstat == 1)
   )
 
-# Model 2a: wife hours ~ quintile * conservative + year FE + nchild
-m2a <- lm(female_weekly_hours ~ quintile_fac * conservative + year_fac + nchild,
-          data = hh, weights = HHWT)
-
-# Model 2b: wife work share (extensive margin) ~ quintile * conservative + year FE + nchild
-m2b <- lm(female_working ~ quintile_fac * conservative + year_fac + nchild,
-          data = hh, weights = HHWT)
-
-# Model 2c: conditional on wife working — intensive margin only
 hh_working <- hh %>% filter(female_empstat == 1)
-m2c <- lm(female_weekly_hours ~ quintile_fac * conservative + year_fac + nchild,
-          data = hh_working, weights = HHWT)
 
-# Model 2d: hours gap (male - female) ~ quintile * conservative + year FE + nchild
-m2d <- lm(I(male_weekly_hours - female_weekly_hours) ~ quintile_fac * conservative + year_fac + nchild,
-          data = hh, weights = HHWT)
+# Clustered on county (the level the political treatment varies at) and on
+# state (more conservative, if the vote margin is spatially correlated across
+# counties within a state).
+hh_clusters <- c("fips", "state_fips")
 
-results_2a <- tidy(m2a) %>% mutate(model = "2a_hours_quintile_x_conservative")
-results_2b <- tidy(m2b) %>% mutate(model = "2b_work_share_quintile_x_conservative")
-results_2c <- tidy(m2c) %>% mutate(model = "2c_hours_conditional_working")
-results_2d <- tidy(m2d) %>% mutate(model = "2d_hours_gap_quintile_x_conservative")
+# Fitted ONE AT A TIME and discarded after summarising. At 14.1M rows each lm
+# object carries a QR factorisation of several GB, and vcovCL builds an
+# estimating-functions matrix of comparable size; holding all four at once
+# exhausts memory on this machine. Only the small tidy summaries are kept.
+hh_specs <- list(
+  list(name = "2a_hours_quintile_x_conservative",
+       f    = female_weekly_hours ~ quintile_fac * conservative + year_fac + nchild,
+       data = "hh"),
+  list(name = "2b_work_share_quintile_x_conservative",
+       f    = female_working ~ quintile_fac * conservative + year_fac + nchild,
+       data = "hh"),
+  list(name = "2c_hours_conditional_working",
+       f    = female_weekly_hours ~ quintile_fac * conservative + year_fac + nchild,
+       data = "hh_working"),
+  list(name = "2d_hours_gap_quintile_x_conservative",
+       f    = I(male_weekly_hours - female_weekly_hours) ~ quintile_fac * conservative +
+              year_fac + nchild,
+       data = "hh")
+)
 
-hh_ols_out <- bind_rows(results_2a, results_2b, results_2c, results_2d) %>%
-  filter(!grepl("^year_fac", term))  # drop year FE rows
+hh_results <- lapply(hh_specs, function(s) {
+  message("  fitting ", s$name, " ...")
+  d   <- get(s$data)
+  # weights must be named as a COLUMN of `data`: lm evaluates it in the
+  # formula's environment (global here), so a local object is not visible.
+  fit <- lm(s$f, data = d, weights = HHWT)
+  out <- both_ses(fit, d, s$name, hh_clusters)
+  rm(fit); invisible(gc(verbose = FALSE))
+  out
+})
+
+results_2b  <- hh_results[[2]]           # kept for the coefficient plot below
+hh_ols_out  <- bind_rows(hh_results) %>%
+  filter(!grepl("^year_fac", term))      # drop year FE rows
 
 write_csv(hh_ols_out, file.path(results_dir, "ols_hh_hours_results.csv"))
 message("Household OLS results written.")
@@ -145,8 +181,11 @@ message("Household OLS results written.")
 # by political direction? If norm effect is income-elastic, Q5 × conservative
 # should be the largest (most negative) coefficient.
 
+# County-clustered SEs for the error bars — results_2b now holds three SE
+# flavours per term, and the classical ones would draw misleadingly tight bars.
 interaction_terms <- results_2b %>%
-  filter(grepl("quintile_fac.*conservative|conservative.*quintile_fac", term)) %>%
+  filter(se_type == "clustered_fips",
+         grepl("quintile_fac.*conservative|conservative.*quintile_fac", term)) %>%
   mutate(
     quintile = as.integer(gsub(".*quintile_fac(\\d).*", "\\1", term))
   )
@@ -162,7 +201,8 @@ if (nrow(interaction_terms) > 0) {
                        labels = c("Q2×Rep", "Q3×Rep", "Q4×Rep", "Q5×Rep")) +
     labs(
       title    = "Interaction: income quintile × conservative county on female work share",
-      subtitle = "Model 2b; baseline = Q1 × Democratic-majority; bars = 95% CI",
+      subtitle = paste("Model 2b; baseline = Q1 × Democratic-majority;",
+                       "bars = 95% CI, SEs clustered by county"),
       x        = "Income quintile (Republican-majority county interaction)",
       y        = "Coefficient on female work probability"
     ) +

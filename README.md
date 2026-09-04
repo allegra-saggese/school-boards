@@ -219,6 +219,17 @@ conditions on the **husband's** labour-income decile, never the couple's.
 - `data/processed/results/*_t2_main_table.tex` — the formatted main table
 - `data/processed/results/*_t2_{balance_table,quadrant_means,decile_coefficients}.csv`
 - `data/processed/results/rdd_donut_breadwinner_norm_results.csv`
+- `data/processed/results/ols_{county_female_lfpr,hh_hours}_results.csv`
+
+**Standard errors in the OLS tables.** Both OLS outputs stack every model twice
+(county models) or three times (household models), distinguished by an
+`se_type` column — `classical`, `clustered_fips`, `clustered_state_fips`.
+**Report the clustered rows.** `conservative` is a county-level treatment, so
+classical SEs are badly understated: clustering inflates them 2–5×, and two
+coefficients that look decisive under classical SEs are not significant once
+clustered. County clustering (430 clusters) is the primary specification;
+state clustering (45 clusters) is the conservative check for spatial
+correlation within states.
 
 **Limitations.** Vote margin is contextual (the place, not the couple), so
 culture estimates are attenuated. County is identified for only ~61% of ACS
