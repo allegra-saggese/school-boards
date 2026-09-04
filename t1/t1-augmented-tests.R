@@ -1,68 +1,46 @@
-# -----------------------------------------------------------------------------
-# NAMING — read this before using "T1/T2/T3" anywhere near this project.
-#
-# At PROJECT level the three parts are:
-#     T1 = the BKP replication            (ipums-bkp-pure-replication.R + this file)
-#     T2 = the empirical culture x wealth quadrant (ipums-t2-empirical-quadrant.R)
-#     T3 = the theoretical household utility model
-#
-# The decompositions in THIS file are supporting evidence inside T1. They were
-# once also called T1/T2/T3, which collided with the project-level names and
-# caused real confusion; they are A/B/C here now. Do not reintroduce T-labels
-# in this file.
-# -----------------------------------------------------------------------------
-
 library(data.table)
 library(ggplot2)
 library(DBI)
 library(RSQLite)
 
-source("functions.R")
-source("R/paths.R")
+source(here::here("_setup.R"))
 
-# =========================================================
-# BKP replication: supporting decompositions (A-C)
+# =============================================================================
+# T1 — supporting decompositions (A, B, C)
 #
-# Second track of the BKP replication update: not a closer copy of BKP's
-# figures, but a set of tests aimed at (a) economic mechanisms behind the 0.5
-# cliff and (b) the two live rebuttals in the literature —
-#   Binder & Lam (JHR 2022): the cliff can arise mechanically from assortative
-#     matching on income, without any gender-identity norm.
-#   Murray-Close & Heggeness (Census 2018): survey income near 0.5 is
-#     behaviorally contaminated (couples under-report her / over-report him
-#     when she out-earns) — BKP's own SIPP-SSA/DER admin-data check (Figure 3)
-#     addresses this but that linked admin data isn't available to us.
+# Inputs : data/processed/panel/ (shared spouse-pair panel)
+#          data/interim/ipums_bkp.sqlite
+# Outputs: data/processed/results/bkp_augmented_a_ratios.csv
+#          data/processed/results/bkp_augmented_b_horserace_results.csv
 #
-# Reuses the SHARED pair panel and donut-RDD design from
-# ipums-rdd-breadwinner-norm.R (same donut_primary/rdd_bw, same political-group
-# merges) rather than rebuilding a BKP-specific sample — A-C are
-# meant to extend "our design," not replicate BKP's.
+# Evidence on the mechanism behind the 0.5 cliff, aimed at the two live
+# rebuttals in the literature:
+#   Binder & Lam (JHR 2022) — the cliff can arise mechanically from assortative
+#     matching on income, with no gender-identity norm.
+#   Murray-Close & Heggeness (Census 2018) — survey income near 0.5 is
+#     behaviourally contaminated (couples under-report her, over-report him,
+#     when she out-earns). BKP's own SIPP-SSA/DER check addresses this, but
+#     that linked admin data is not available to us.
 #
-# A — income-share decomposition: wife's share of (a) labor earnings,
-#   (b) total income, (c) capital/non-labor income. If the cliff is about
-#   effort/market-work (identity norm) rather than total household resources,
-#   it should be sharp in (a), attenuated in (b), and absent in (c) — a direct
-#   test against Binder & Lam, who can't distinguish these three shares under
-#   an assortative-matching-only story.
+# A — INCOME-SHARE DECOMPOSITION. The wife's share of (a) labour earnings,
+#     (b) total income, (c) capital income. If the cliff is about market work
+#     rather than household resources, it should be sharp in (a), attenuated in
+#     (b), and absent in (c). Assortative matching alone cannot distinguish the
+#     three shares.
+# B — HOURLY-WAGE HORSE RACE. The husband's hourly wage (his market price,
+#     hard to game by working fewer hours) against his total income (easier for
+#     either spouse to distort) as predictors of her labour supply.
+# C — political heterogeneity. REMOVED 2026-08-30, superseded by T2, which does
+#     it properly with state fixed effects and county-clustered SEs.
 #
-# B — hourly-wage decomposition: horse-race the husband's hourly wage rate
-#   (his "market price," harder to game by working fewer hours) against his
-#   total income (easier for either spouse to distort/misreport) as predictors
-#   of the wife's labor supply. If the identity threat is about the wife's
-#   income exceeding a stable measure of the husband's earning power (not just
-#   noisy reported income), the hourly-wage version should do more work.
+# Uses the shared pair panel and the donut-RDD design from
+# t2-rdd-breadwinner-norm.R — these extend our design, not BKP's.
 #
-# C — cultural/income-elastic heterogeneity: stratify A/B by county
-#   political lean. REMOVED 2026-08-30 — superseded by T2
-#   (ipums-t2-empirical-quadrant.R), which does this properly with state fixed
-#   effects and county-clustered SEs.
-#
-# Retires the old INCTOT - INCSS - INCWELFR measure (incoherent: leaves
-# capital income and non-SS/welfare transfers in) in favor of the explicit
-# three-way T1 decomposition.
-# =========================================================
+# Income is the explicit three-way decomposition above, not INCTOT - INCSS -
+# INCWELFR, which leaves capital income and other transfers in.
+# =============================================================================
 
-# ── 0) Config (matches ipums-rdd-breadwinner-norm.R) ──────────────────────
+# ── 0) Config (matches t2-rdd-breadwinner-norm.R) ─────────────────────────
 donut_primary <- 0.02
 rdd_bw        <- 0.20
 
@@ -71,11 +49,9 @@ results_dir <- data_path("processed", "results")
 ensure_dir(results_dir)
 
 sqlite_path <- data_path("interim", "ipums_bkp.sqlite")
-# Both sides now share ONE data vintage: the pair panel was rebuilt from this
-# same database by ipums-county-household-analysis.R, so the capital-income
-# columns pulled here and the panel's own income columns come from IPUMS
-# extract 4 throughout. (Earlier this script paired a new-extract pull with an
-# old-extract panel; that is no longer the case.)
+# Both sides share ONE data vintage: the pair panel is built from this same
+# database by ipums-county-household-analysis.R, so the capital-income columns
+# pulled here and the panel's own income columns are both IPUMS extract 4.
 
 below_above_ratio <- function(dt, z_col, wt_col, donut_w = donut_primary) {
   dt[, zb := round(get(z_col) * 100) / 100]
@@ -86,7 +62,7 @@ below_above_ratio <- function(dt, z_col, wt_col, donut_w = donut_primary) {
              ratio = below / above)
 }
 
-# ── 1) Load shared pair panel (T1a/T1b, T2 base) ───────────────────────────
+# ── 1) Load shared pair panel ──────────────────────────────────────────────
 
 cols_base <- c(
   "YEAR", "SAMPLE", "SERIAL", "HHWT", "STATEICP", "COUNTYICP",
@@ -109,11 +85,10 @@ dt <- fread(
 message("A: building three-way income-share decomposition ...")
 
 # (a) LABOR earnings share = wage + self-employment, BKP's actual income
-# concept. The rebuilt panel carries this directly (female/male_income_labor);
-# previously this line used wage-only because the old extract had no
-# self-employment income. Including it matters: it brings in couples whose
-# earnings are mostly business or farm income, who previously looked like
-# non-earners and were dropped from the interior sample entirely.
+# concept, carried directly by the panel (female/male_income_labor). The
+# self-employment component matters: without it, couples whose earnings are
+# mostly business or farm income read as non-earners and drop out of the
+# interior sample entirely.
 #
 # TWO SAMPLES, deliberately:
 #
@@ -178,7 +153,7 @@ years_needed <- sort(unique(dt$YEAR))
 
 z_capital_list <- lapply(years_needed, function(yr) {
   # Sequential rowid-range scan, not an index seek — see the performance note
-  # in ipums-bkp-pure-replication.R (measured ~290x on this database).
+  # in t1/t1-replication.R (measured ~290x on this database).
   rr <- year_rowid_ranges[year_rowid_ranges$YEAR == as.integer(yr), ]
   cap <- setDT(dbGetQuery(con, paste0(
     "SELECT SERIAL, PERNUM, ",
@@ -322,7 +297,7 @@ save_plot("bkp_augmented_b_hourly_wage_scatter.png", { print(p_t2) }, width = 18
 # Section C (stratification by political lean x frontier status) was removed
 # on 2026-08-30. The frontier line is secondary — see
 # frontier-secondary-analysis.R. The culture x wealth question it was
-# reaching for is answered properly in T2 (ipums-t2-empirical-quadrant.R),
+# reaching for is answered properly in T2 (t2/t2-empirical-quadrant.R),
 # which has state fixed effects and county-clustered SEs.
 
 message("\nBKP augmented tests complete.")

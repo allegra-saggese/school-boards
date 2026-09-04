@@ -1,63 +1,71 @@
 # =============================================================================
-# T3 — presentation figures
+# T3 — all figures
 #
-# Five figures. Two conventions used throughout, both of which matter for how
-# the evidence reads:
+# Inputs : data/processed/results/*_t3_estimates_v2_by_year.csv
+#          data/processed/results/*_t3_tau_series.csv
+#          data/processed/results/*_t3_aggregate_distortion.csv
+#          data/processed/panel/model_input_households.csv
+# Outputs: data/graphs/YYYY-MM-DD_t3_*.png  (figure 1 also as .pdf)
 #
-# 1. DECENNIAL YEARS (1980, 1990, 2000) ARE MARKED DISTINCTLY. They are a
-#    different sample design from the 2001-2024 ACS, and model fit differs
-#    across that boundary, so they must not be read as part of one continuous
-#    series.
-# 2. TARGETED vs UNTARGETED moments are visually separated. The untargeted ones
-#    were never fitted in any year and are the model's real out-of-sample test;
-#    presenting them alongside the fitted moments without distinction would
-#    overstate what the fit demonstrates.
+# Two conventions apply throughout:
+#   1. Decennial years (1980, 1990, 2000) are marked with hollow points. They
+#      are a different sample design from the 2001-2024 ACS and must not be
+#      read as one continuous series.
+#   2. Targeted and untargeted moments are labelled separately. The untargeted
+#      ones were never fitted, and are the model's out-of-sample test.
 # =============================================================================
 suppressMessages({library(data.table); library(ggplot2)})
-source("functions.R"); source("R/paths.R")
+source(here::here("_setup.R"))
+
 results_dir <- data_path("processed", "results")
-newest <- function(pat) {
-  f <- sort(list.files(results_dir, pat, full.names = TRUE)); fread(f[length(f)])
-}
-est <- newest("t3_estimates_v2_by_year.csv$")
-tau <- newest("t3_tau_series.csv$")
-agg <- newest("t3_aggregate_distortion.csv$")
-d   <- merge(merge(est, tau[, .(YEAR, tau_model, tau_binding, pct_binding)], by = "YEAR"),
-             agg[, .(YEAR, pct_female_hours_lost, lost_per_affected, fte_lost_millions,
-                     hours_lost_total, hours_gain_total)], by = "YEAR")
+
+est <- read_newest(results_dir, "t3_estimates_v2_by_year.csv$")
+tau <- read_newest(results_dir, "t3_tau_series.csv$")
+agg <- read_newest(results_dir, "t3_aggregate_distortion.csv$")
+
+d <- merge(merge(est, tau[, .(YEAR, tau_model, tau_binding, pct_binding)], by = "YEAR"),
+           agg[, .(YEAR, pct_female_hours_lost, lost_per_affected, fte_lost_millions,
+                   hours_lost_total, hours_gain_total)], by = "YEAR")
 d[, era := factor(ifelse(YEAR %in% c(1980, 1990, 2000), "Decennial census", "ACS"),
                   levels = c("Decennial census", "ACS"))]
 
+era_shapes <- scale_shape_manual(values = c("Decennial census" = 21, "ACS" = 19))
+
 base_theme <- theme_minimal(base_size = 13) +
-  theme(plot.title = element_text(face = "bold", size = 15),
+  theme(plot.background  = element_rect(fill = "white", colour = NA),
+        panel.background = element_rect(fill = "white", colour = NA),
+        plot.title    = element_text(face = "bold", size = 15),
         plot.subtitle = element_text(colour = "grey30", size = 11),
-        plot.caption = element_text(colour = "grey45", size = 9, hjust = 0),
+        plot.caption  = element_text(colour = "grey45", size = 9, hjust = 0),
         legend.position = "top", panel.grid.minor = element_blank(),
         strip.text = element_text(face = "bold"))
 
-# ── 1. tau over time: the headline ──────────────────────────────────────────
+# ── 1. the norm wedge tau over time: the headline ───────────────────────────
+# Plain-text title rather than plotmath, so the PDF embeds cleanly in LaTeX.
 save_plot("t3_tau_over_time.png", {
   pd <- melt(d[, .(YEAR, era,
                    `All households` = tau_model,
                    `Households the norm binds on` = tau_binding)],
              id.vars = c("YEAR", "era"), variable.name = "measure", value.name = "tau")
   print(ggplot(pd, aes(YEAR, tau, colour = measure)) +
-    geom_line(linewidth = 0.9) +
-    geom_point(aes(shape = era), size = 2.6, fill = "white", stroke = 1) +
-    scale_shape_manual(values = c("Decennial census" = 21, "ACS" = 19)) +
+    geom_line(linewidth = 0.95) +
+    geom_point(aes(shape = era), size = 2.5, fill = "white", stroke = 1) +
+    era_shapes +
     scale_colour_manual(values = c("All households" = "#08519C",
                                    "Households the norm binds on" = "#B2182B")) +
-    scale_y_continuous(limits = c(0, NA), labels = scales::percent_format(accuracy = 1)) +
-    labs(title = expression(paste("The norm wedge ", tau, " = ", alpha, "C, 1980-2024")),
-         subtitle = paste0("The implicit tax the breadwinner norm places on the wife's marginal earnings.\n",
-                           "Reported as tau rather than alpha: alpha falls 89% over this period, but most of that\n",
-                           "is nominal income quadrupling, not the norm weakening."),
-         x = NULL, y = "Implicit tax on her earnings", colour = NULL, shape = "Sample",
-         caption = "Source: IPUMS USA 1980-2024, 16.9M married couples. Structural estimates, one per year.") +
+    scale_y_continuous(limits = c(0, NA), labels = function(x) paste0(round(100 * x), "%")) +
+    scale_x_continuous(breaks = seq(1980, 2020, 10)) +
+    labs(title = "The norm wedge over time, 1980-2024",
+         subtitle = paste0("tau = alpha x C: the implicit tax the breadwinner norm places on the wife's marginal earnings.\n",
+                           "Reported as tau rather than alpha because alpha falls 89% over this period, most of which\n",
+                           "is nominal income growth rather than any weakening of the norm."),
+         x = NULL, y = "Implicit tax on her marginal earnings",
+         colour = NULL, shape = "Sample",
+         caption = "Source: IPUMS USA 1980-2024, 16.9M married couples. One structural estimate per year.") +
     base_theme)
-}, width = 2200, height = 1300)
+}, width = 2200, height = 1300, also_pdf = TRUE)
 
-# ── 2. model vs data: targeted and untargeted ───────────────────────────────
+# ── 2. model vs data: targeted and untargeted moments ───────────────────────
 save_plot("t3_model_vs_data_over_time.png", {
   mk <- function(dv, mv, lab, grp) data.table(YEAR = d$YEAR, era = d$era,
         Data = d[[dv]], Model = d[[mv]], moment = lab, grp = grp)
@@ -83,7 +91,7 @@ save_plot("t3_model_vs_data_over_time.png", {
     base_theme)
 }, width = 2400, height = 1500)
 
-# ── 3. the offsetting forces ────────────────────────────────────────────────
+# ── 3. the offsetting forces: intensity vs exposure ─────────────────────────
 save_plot("t3_intensity_vs_exposure.png", {
   b <- d[YEAR == 1980]
   pd <- rbindlist(list(
@@ -120,7 +128,7 @@ save_plot("t3_aggregate_distortion.png", {
   print(ggplot(pd, aes(YEAR, v)) +
     geom_line(colour = "#08519C", linewidth = 0.95) +
     geom_point(aes(shape = era), colour = "#08519C", size = 2.4, fill = "white", stroke = 1) +
-    scale_shape_manual(values = c("Decennial census" = 21, "ACS" = 19)) +
+    era_shapes +
     facet_wrap(~p, scales = "free_y", ncol = 2) +
     expand_limits(y = 0) +
     labs(title = "The norm's aggregate cost: a hump, peaking in 2006",
@@ -157,4 +165,60 @@ save_plot("t3_corner_gradient_limitation.png", {
     base_theme)
 }, width = 2500, height = 1150)
 
-message("wrote 5 T3 figures to data/graphs/")
+# ── 6. within-couple hours, earnings and wages ──────────────────────────────
+# The flat male line is the point: the norm's threshold IS his earnings, so his
+# stagnation is why more couples now hit the constraint.
+hh <- fread(data_path("processed","panel","model_input_households.csv"),
+            select = c("YEAR","HHWT","f_h","m_h","f_lab","m_lab","f_w","m_w",
+                       "f_w_predicted","m_w_predicted"), showProgress = FALSE)
+wq <- function(x, w, p = .5) { i <- order(x); x <- x[i]; w <- w[i]
+                               x[which.max(cumsum(w)/sum(w) >= p)] }
+
+hrs <- hh[, .(Wife = weighted.mean(f_h, HHWT), Husband = weighted.mean(m_h, HHWT)), by = YEAR]
+ern <- hh[, .(Wife = weighted.mean(deflate_to(f_lab, YEAR, 2024), HHWT),
+              Husband = weighted.mean(deflate_to(m_lab, YEAR, 2024), HHWT)), by = YEAR]
+wg  <- hh[m_w_predicted == FALSE & f_w_predicted == FALSE,
+          .(Wife = wq(deflate_to(f_w, YEAR, 2024), HHWT),
+            Husband = wq(deflate_to(m_w, YEAR, 2024), HHWT)), by = YEAR]
+
+save_plot("t3_hours_earnings_wife_vs_husband.png", {
+  mk <- function(x, lab) melt(x, id.vars = "YEAR", variable.name = "spouse",
+                              value.name = "v")[, panel := lab][]
+  pd <- rbindlist(list(mk(hrs, "Annual market hours"),
+                       mk(ern, "Annual labour earnings (2024 $)"),
+                       mk(wg,  "Median hourly wage (2024 $)")))
+  pd[, panel := factor(panel, levels = c("Annual market hours",
+                                         "Annual labour earnings (2024 $)",
+                                         "Median hourly wage (2024 $)"))]
+  pd[, era := ifelse(YEAR %in% c(1980, 1990, 2000), "Decennial census", "ACS")]
+  print(ggplot(pd, aes(YEAR, v, colour = spouse)) +
+    geom_line(linewidth = 1.0) +
+    geom_point(aes(shape = era), size = 2.2, fill = "white", stroke = 0.9) +
+    era_shapes +
+    scale_colour_manual(values = c(Wife = "#B2182B", Husband = "#08519C")) +
+    facet_wrap(~panel, scales = "free_y", ncol = 3) +
+    expand_limits(y = 0) +
+    labs(title = "Within married couples: the wife converges, the husband does not move",
+         subtitle = paste0("Married couples, both spouses 18-65, IPUMS 1980-2024. Wages are medians among couples with BOTH\n",
+                           "wages observed; hours and earnings are means over all couples. Real series deflated to 2024 dollars.\n",
+                           "Men's real median wage rose 8% in 44 years -- and was flat (index 100-101) from 1980 to 2015."),
+         x = NULL, y = NULL, colour = NULL, shape = "Sample",
+         caption = paste0("Why this matters for the model: the breadwinner norm's threshold IS his earnings. His stagnation, ",
+                          "not only her gains,\nis what pushed the share of couples the norm binds on from 15.9% to 30.3%. ",
+                          "Had his wages kept pace it would be 18.5%.")) +
+    base_theme + theme(panel.spacing = unit(1.4, "lines")))
+}, width = 2600, height = 1150)
+
+# ── console summary ─────────────────────────────────────────────────────────
+cat(sprintf("\ntau (binding) 1980 %.3f -> 2024 %.3f  (%+.0f%%)\n",
+    tau[YEAR == 1980]$tau_binding, tau[YEAR == 2024]$tau_binding,
+    100 * (tau[YEAR == 2024]$tau_binding / tau[YEAR == 1980]$tau_binding - 1)))
+cat("1980 vs 2024, indexed:\n")
+for (nm in c("hrs", "ern", "wg")) {
+  x <- get(nm); b <- x[YEAR == 1980]; e <- x[YEAR == 2024]
+  cat(sprintf("  %-28s wife %+5.0f%%   husband %+5.0f%%\n",
+      c(hrs = "annual hours", ern = "annual earnings (real)",
+        wg = "hourly wage (real)")[nm],
+      100 * (e$Wife / b$Wife - 1), 100 * (e$Husband / b$Husband - 1)))
+}
+message("wrote 6 T3 figures to data/graphs/")

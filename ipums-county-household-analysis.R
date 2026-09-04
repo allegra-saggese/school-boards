@@ -5,15 +5,20 @@ library(tidyr)
 library(readr)
 library(ggplot2)
 
-source("R/paths.R")
-source("functions.R")
+source(here::here("_setup.R"))
+
+# Builds the shared county panel and spouse-pair micro file used by T1 and T2.
+# Input  : data/interim/ipums_bkp.sqlite
+#          data/processed/panel/*_lfpr_panel_with_groups.csv (for the political merge)
+# Outputs: data/processed/panel/ipums_married_oppositesex_spouse_pairs_with_groups.csv
+#          plus county LFPR/hours and household-composition summaries
+# Sources ipums-married-household-suite.R at the end.
 
 # =========================================================
 # 0) Configuration
 # =========================================================
-# Years available in the rebuilt database (ipums_bkp.sqlite, IPUMS extract 4).
-# Previously c(1980, 1990, 2005:2023) — limited by the old extract. The new one
-# adds the 1970 and 2000 decennials plus ACS 2001-2004 and 2024.
+# Years available in the database (ipums_bkp.sqlite, IPUMS extract 4): the
+# 1970/1980/1990/2000 decennials plus ACS 2001-2024.
 # NOTE ON 1970: the extract carries both 1970 questionnaire forms (Form 1 and
 # Form 2). They are drawn from different households so they do not overlap, but
 # the 1970 census split questions across the two long forms. Which form(s) we
@@ -183,7 +188,7 @@ year_rowid_clause <- function(yr) {
 # =========================================================
 # Keep the 1970 form(s) that actually report self-employment income, rather
 # than assuming which one does. Mirrors detect_1970_samples() in
-# ipums-bkp-pure-replication.R so both pipelines treat 1970 identically.
+# t1/t1-replication.R so both pipelines treat 1970 identically.
 selfemp_coverage_floor <- 0.90
 
 samples_1970 <- local({
@@ -1092,9 +1097,9 @@ stateicp_fips_xwalk <- data.frame(
 suppressPackageStartupMessages(library(data.table))
 
 # STREAMED YEAR-BY-YEAR THROUGH A TEMP FILE.
-# The earlier version held the whole 4.6GB panel, then merge() produced a second
-# full copy, then fwrite needed a third — which hit R's 24GB vector limit on this
-# machine. Nothing here needs all years resident at once: the FIPS key and the
+# Holding the whole 4.6GB panel resident costs three full copies — the panel,
+# merge()'s output, and fwrite's buffer — which exceeds R's 24GB vector limit on
+# this machine. Nothing here needs all years at once: the FIPS key and the
 # political join are both within-year. So we read one year, join it, append it to
 # a temp file, and drop it. Peak memory is one year (~2M rows) instead of 14M,
 # and the temp file is moved into place only after every year succeeds, so a
@@ -1182,5 +1187,5 @@ message("Merged political spouse-pair file: ", merged_file)
 run_extended_suite <- tolower(Sys.getenv("RUN_IPUMS_MARRIED_SUITE", "true")) == "true"
 if (run_extended_suite) {
   message("Running extended married-household suite...")
-  source("ipums-married-household-suite.R")
+  source(here::here("ipums-married-household-suite.R"))
 }

@@ -7,8 +7,11 @@ library(ggplot2)
 library(knitr)
 library(tidycensus)
 
-source("R/paths.R")
-source("functions.R")
+source(here::here("_setup.R"))
+
+# Track A — ACS county LFPR + income panel, 2010-2020 (requires CENSUS_API_KEY).
+# Outputs: data/processed/panel/YYYY-MM-DD_lfpr_panel.csv
+#          data/processed/results/YYYY-MM-DD_lfpr_model_{summary,coefficients}.csv
 
 # =========================================================
 # 0) Configuration

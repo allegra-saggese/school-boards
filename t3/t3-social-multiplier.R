@@ -33,9 +33,11 @@
 # =============================================================================
 
 library(data.table)
-source("t3-model-solver.R")
-source("functions.R")
-source("R/paths.R")
+source(here::here("_setup.R"))
+
+# Runs on random draws, not the estimation sample. Writes to
+# data/processed/results/.
+source(here::here("t3", "t3-model-solver.R"))
 set.seed(20260830)
 
 results_dir <- data_path("processed", "results")

@@ -4,8 +4,13 @@ library(tidyr)
 library(readr)
 library(ggplot2)
 
-source("R/paths.R")
-source("functions.R")
+source(here::here("_setup.R"))
+
+# Multi-measure income analysis on the spouse pairs, and household-level
+# political x income descriptives.
+# Input  : data/processed/panel/ipums_married_oppositesex_spouse_pairs*.csv
+# Outputs: data/processed/results/ (income grids, binned curves, heatmaps,
+#          composition and validation tables)
 
 # =========================================================
 # 0) Configuration

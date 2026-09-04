@@ -1,53 +1,48 @@
 # =============================================================================
-# T3 — estimation of (alpha, f) year by year
+# T3 — estimation of (alpha, f), year by year
 #
-# THE MODEL. One norm parameter, as in the slides: the identity penalty enters
-# through the wedge tau = alpha / u'(C), which under log utility is tau =
-# alpha*C. It acts as a proportional subsidy on his hours and an equal
-# proportional tax on hers. alpha is therefore an HOURS parameter -- it governs
-# how much someone works, and its empirical signature is bunching at equal
-# earnings (the cliff).
+# Input  : data/processed/panel/model_input_households.csv
+# Outputs: data/processed/results/YYYY-MM-DD_t3_estimates_v2_by_year.csv
 #
-# WHY THERE IS NO SECOND NORM PARAMETER. An earlier draft added alpha2, a
-# penalty on her participation, to make T3 speak to T2's extensive-margin
-# result. That is not in the model and has been removed. It is also provably
-# unnecessary for the cliff: a relative-earnings norm cannot move participation
-# at all (the corner share is invariant to alpha at every value tested, because
-# V = 0 at the KINK as well as at the corner, and bunching preserves her
-# earnings while withdrawing does not).
+# THE MODEL. The identity penalty enters through the wedge tau = alpha / u'(C),
+# which under log utility is alpha*C: a proportional subsidy on his hours and
+# an equal proportional tax on hers. alpha is therefore an HOURS parameter, and
+# its empirical signature is bunching at equal earnings (the cliff).
 #
-# DIVISION OF LABOUR IN THE MODEL
-#   alpha -> hours. The cliff. The intensive margin. This is the norm.
-#   F     -> the corner. F is a TECHNOLOGY, the goods cost of replacing home
-#            production (childcare, cooking) once a spouse enters the market.
-#            It carries NO identity interpretation and is not a preference.
+# ONE NORM PARAMETER, NOT TWO. A relative-earnings norm cannot move
+# participation at all: the corner share is invariant to alpha at every value
+# tested, because V = 0 at the KINK as well as at the corner, and bunching
+# preserves her earnings while withdrawing does not.
+#
+#   alpha -> hours; the cliff; the intensive margin. This is the norm.
+#   F     -> the corner. A TECHNOLOGY: the goods cost of replacing home
+#            production once a spouse enters the market. No identity content,
+#            and not a preference.
+#
 # T3 explains the cliff and hours. T2's participation finding is an empirical
-# result the theory does not claim to generate, and should not be made to.
+# result the theory does not claim to generate.
 #
 # F IS ESTIMATED, NOT ASSUMED. F = f * median(y_t), a share of that year's
-# median household income -- so it needs no external calibration and deflates
-# itself across a 44-year sample. An earlier run fixed f = 0.10 arbitrarily.
+# median household income, so it needs no external calibration and deflates
+# itself across a 44-year sample.
 #
-# MOMENTS (5) vs PARAMETERS (2) -- OVER-identified, so the fit is testable:
-#   cliff ratio                              -> alpha
-#   corner share overall                     -> f
-#   corner share by husband's-wage quintile  -> tests F's FUNCTIONAL FORM. A
-#     goods cost has utility burden F/C, which falls with resources, so it
-#     implies a specific corner gradient. If the data's gradient is flatter or
-#     steeper than a goods cost can produce, the form is wrong.
-# Untargeted, held back as the out-of-sample test:
-#   wife's share of couple hours, share of couples where she out-earns him
+# 5 MOMENTS, 2 PARAMETERS — over-identified, so the fit is testable:
+#   cliff ratio                             -> alpha
+#   corner share overall                    -> f
+#   corner share by husband's-wage quintile -> tests F's FUNCTIONAL FORM. A
+#     goods cost has utility burden F/C, which falls with resources, implying a
+#     specific gradient; a flatter or steeper one rejects the form.
+# Held back as the out-of-sample test: wife's share of couple hours, and the
+# share of couples where she out-earns him.
 #
-# Each YEAR is estimated separately: repeated cross-sections, each year a
-# different t. Continuous optimiser, not a grid -- an earlier grid version had
-# alpha alternating between two adjacent grid points across eleven years, so
-# apparent time variation was quantisation rather than signal.
+# Each year is estimated separately (repeated cross-sections), with a
+# continuous optimiser rather than a grid — a grid quantises alpha into
+# spurious time variation.
 # =============================================================================
 
 library(data.table)
-source("t3-model-solver.R")
-source("functions.R")
-source("R/paths.R")
+source(here::here("_setup.R"))
+source(here::here("t3", "t3-model-solver.R"))
 
 panel_dir   <- data_path("processed", "panel")
 results_dir <- data_path("processed", "results")

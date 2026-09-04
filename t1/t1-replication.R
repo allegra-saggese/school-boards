@@ -5,68 +5,49 @@ library(RSQLite)
 library(sandwich)
 library(lmtest)
 
-source("functions.R")
-source("R/paths.R")
+source(here::here("_setup.R"))
 
-# =========================================================
-# BKP (Bertrand, Kamenica & Pan, QJE 2015) — PURE replication
+# =============================================================================
+# T1 — BKP pure replication
 #
-# Sample construction, matched to BKP Section 3.1 and Section 5:
-#   - Figure 1: ACS 2008-2010, young couples (wife 22-31, husband 24-33), both
-#     spouses with labor income > 0 (interior).
-#   - Figure 2: same young-couple restriction, one decennial per decade
-#     (1970, 1980, 1990, 2000) — BKP's Section 3.1 introduces Figure 2 directly
-#     after Figure 1 with no separate restriction stated, so we carry the same
-#     sample forward.
-#   - Table 2/3 run on THREE samples, all with the SAME specification:
-#       (a) BKP replication  : 1970,1980,1990,2000 + ACS 2008-2011
-#                              -- the published QJE sample, for replication
-#       (b) Post-BKP only    : ACS 2012-2024
-#                              -- the years published after BKP
-#       (c) UPDATED          : 1970,1980,1990,2000 + ACS 2001-2024
-#                              -- BKP's design run on ALL data now available
-#     (c) is the headline "same analysis, updated data" result; (a) establishes
-#     that the design reproduces before extending it.
+# Bertrand, Kamenica & Pan (QJE 2015), "Gender Identity and Relative Income
+# within Households", run on BKP's own sample and extended to 2024.
 #
-# BENCHMARKS ARE THE PUBLISHED QJE TABLES, NOT THE 2013 NBER WORKING PAPER.
-# The two differ in both specification and coefficients, and an earlier version
-# of this script compared against the WP by mistake.
+# Input  : data/interim/ipums_bkp.sqlite   (ipums-bkp-build-database.R)
+# Outputs: data/processed/results/bkp_pure_table23_era_comparison.csv
+#          data/processed/results/bkp_pure_figure1_era_comparison_density.csv
+#
+# SAMPLES. Figures 1/2 use young couples (wife 22-31, husband 24-33), both with
+# labor income > 0. Tables 2/3 run ONE specification on three samples:
+#   (a) BKP replication : 1970/1980/1990/2000 + ACS 2008-2011  (the QJE sample)
+#   (b) Post-BKP        : ACS 2012-2024
+#   (c) Updated         : 1970/1980/1990/2000 + ACS 2001-2024  (the headline)
+# (a) establishes the design reproduces before (c) extends it.
+#
+# BENCHMARKS are the published QJE tables, not the 2013 NBER working paper:
 #   Table II  (wifeLFP,   p.593): col1 -0.178, col2 (cubic) -0.142, col4 -0.143
 #   Table III (incomeGap, p.597): col1 -0.031, col2 (cubic) -0.095, col4 -0.109
-#   N: 7,384,176 (Table II cols 1-4); 5,306,682 (Table III cols 1-4)
-# Marriage-duration fixed effects appear ONLY in column 6 of each table, on the
-# "2010sub" subsample -- they are not part of the baseline specification.
-#   - Income = LABOR income (wage + self-employment), matching BKP. See the
-#     labor_income() helper for the era-splicing and the N/A-code handling.
-#   - Race = BKP's three marriage-market groups (white / Black / Hispanic,
-#     other races dropped), via RACE + HISPAN.
-#   - No county filter (BKP doesn't use one; the shared pipeline's COUNTYICP
-#     filter silently drops most PUMAs). Household composition: only requires
-#     a mutually-linked opposite-sex spouse pair via SPLOC — extra household
-#     members (parents, adult children) are NOT excluded, unlike the shared
-#     pipeline's "exactly two adults 25+" filter.
+#   N: 7,384,176 (Table II); 5,306,682 (Table III)
+# Marriage-duration FE appear only in column 6, on the 2010sub subsample, and
+# are not part of the baseline specification.
 #
-# REMAINING DEVIATIONS FROM BKP (deliberate; see
-# claude/bkp-replication-v2-changes.md):
-#   1) BKP's Figure 1 used the ACS 2008-2010 3-year aggregate. We stack the
-#      three 1-year files instead. The 3-year product contains the same
-#      respondents, so including both would double-count; BKP's use of it
-#      reflected the data vintage available to them in 2013, not a property
-#      that needs reproducing. Weighting differs slightly as a result.
-#   2) 1970 carries two non-overlapping questionnaire forms. Which one(s) we
-#      use is decided FROM THE DATA: detect_1970_samples() keeps the form(s)
-#      that actually report self-employment income (INCBUS/INCFARM), since the
-#      1970 census split questions across its two long forms and that income is
-#      part of BKP's labor-income concept. If both qualify they are pooled to
-#      ~2% and weights are halved.
-#   3) Extended through 2024, past BKP's 2011 endpoint, to test whether the
-#      0.5 cliff has changed in the decade since publication.
+# DEFINITIONS. Income is LABOR income (wage + self-employment); race is BKP's
+# three marriage-market groups (white/Black/Hispanic) from RACE + HISPAN; no
+# county filter; a couple needs only a mutually-linked SPLOC pair, so extra
+# household members are not excluded.
 #
-# Scope: distribution (Figure 1/2) + labor supply (Table 2/3) only. Table 1
-# (Bartik-IV marriage-formation regression) and Tables 4-6 (NSFH marital
-# stability, ATUS chores) need data/instruments we don't have and are out of
-# scope here — see claude/future-extensions.md.
-# =========================================================
+# DELIBERATE DEVIATIONS (see claude/bkp-replication-v2-changes.md):
+#   1) Figure 1 stacks the three ACS 1-year files rather than the 2008-2010
+#      3-year aggregate, which contains the same respondents.
+#   2) 1970's two long forms are chosen FROM THE DATA by detect_1970_samples(),
+#      keeping the form(s) that report self-employment income. If both qualify
+#      they are pooled and weights halved.
+#   3) Extended through 2024 to test whether the 0.5 cliff has changed.
+#
+# SCOPE: distribution (Fig 1/2) and labor supply (Tables 2/3) only. BKP's
+# Table 1 and Tables 4-6 need data we do not have — see
+# claude/future-extensions.md.
+# =============================================================================
 
 results_dir <- data_path("processed", "results")
 panel_dir   <- data_path("processed", "panel")

@@ -2,7 +2,7 @@
 
 Deferred items and the data-access gate for the BKP replication update. See
 `claude/bkp-replication-v2-changes.md` for the decisions already implemented
-in `ipums-bkp-pure-replication.R` and `ipums-bkp-augmented-tests.R`.
+in `t1/t1-replication.R` and `t1/t1-augmented-tests.R`.
 
 ## Gate: new IPUMS extract — RESOLVED (2026-08-27)
 
@@ -57,7 +57,7 @@ be deleted — but only after:
 
 ## T2 augmented-test follow-up
 
-`ipums-bkp-augmented-tests.R`'s T3 stratifies T1 (the income-share
+`t1/t1-augmented-tests.R`'s T3 stratifies T1 (the income-share
 decomposition) by political lean × frontier status, but does **not**
 re-stratify T2 (the hourly-wage horse race) — the
 `ipums_married_oppositesex_spouse_pairs_with_groups.csv` panel used for the

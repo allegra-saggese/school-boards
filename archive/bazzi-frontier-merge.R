@@ -2,8 +2,7 @@ library(sf)
 library(data.table)
 library(ggplot2)
 
-source("functions.R")
-source("R/paths.R")
+source(here::here("_setup.R"))
 
 # =========================================================
 # Bazzi et al. frontier indicator merge

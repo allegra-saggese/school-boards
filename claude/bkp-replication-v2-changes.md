@@ -2,8 +2,8 @@
 
 Internal documentation track: data provenance, cleaning/sample decisions, and
 methodological choices behind the BKP replication update. Companion to the
-external, reviewer-ready code in `ipums-bkp-pure-replication.R` and
-`ipums-bkp-augmented-tests.R`. See `claude/future-extensions.md` for deferred
+external, reviewer-ready code in `t1/t1-replication.R` and
+`t1/t1-augmented-tests.R`. See `claude/future-extensions.md` for deferred
 items and the new-extract checklist.
 
 Source of the decisions below: a prior Cowork session
@@ -94,7 +94,7 @@ instrument — needs 12-industry wage growth by state/year); Tables 4-5
 (marital satisfaction/divorce, NSFH 1987-88/1992-94 waves); Table 6 (division
 of chores, ATUS × CPS). See `claude/future-extensions.md`.
 
-## Decisions locked for the pure replication (`ipums-bkp-pure-replication.R`)
+## Decisions locked for the pure replication (`t1/t1-replication.R`)
 
 - **No county filter**, either track — BKP doesn't use one; the shared
   pipeline's `COUNTYICP IS NOT NULL` filter silently drops most PUMAs.
@@ -107,7 +107,7 @@ of chores, ATUS × CPS). See `claude/future-extensions.md`.
   because IPUMS changes the variable: `INCBUS + INCFARM` (1950-2000, reported
   separately) and `INCBUS00` (2000 onward, combined); 2000 carries both and we
   prefer `INCBUS00` so the census and ACS eras share one definition. See
-  `labor_income()` in `ipums-bkp-pure-replication.R`.
+  `labor_income()` in `t1/t1-replication.R`.
   - Two hazards handled there. (a) **IPUMS N/A sentinels**: income variables
     use 999999/999998/9999999-style codes for "not in universe", which are NOT
     dollars. Verified on the old extract: `INCWAGE = 999999` appears on every
@@ -144,16 +144,16 @@ of chores, ATUS × CPS). See `claude/future-extensions.md`.
 
 `ipums-county-household-analysis.R`'s pair-builder (age 25-64,
 `n_work_age=2`, county filter) feeds `ipums-married-household-suite.R`,
-`ipums-rdd-breadwinner-norm.R`, the OLS script, and the frontier merge.
+`t2/t2-rdd-breadwinner-norm.R`, the OLS script, and the frontier merge.
 Changing its restrictions to match BKP would silently change every other
-analysis's sample. `ipums-bkp-pure-replication.R` instead queries
+analysis's sample. `t1/t1-replication.R` instead queries
 `ipums_data.sqlite` directly with its own restrictions, entirely independent
 of that shared pipeline.
 
-`ipums-bkp-augmented-tests.R` (T1-T3) takes the opposite approach
+`t1/t1-augmented-tests.R` (T1-T3) takes the opposite approach
 deliberately: it *does* reuse the shared `ipums_married_oppositesex_
 spouse_pairs_with_kids.csv` / `_with_groups.csv` panels and the donut-RDD
-design from `ipums-rdd-breadwinner-norm.R`, because T1-T3 are meant to extend
+design from `t2/t2-rdd-breadwinner-norm.R`, because T1-T3 are meant to extend
 "our design" (income-elastic, culturally-patterned norm), not replicate BKP's
 sample — the two tracks intentionally use different sample constructions for
 different purposes.
@@ -161,7 +161,7 @@ different purposes.
 ## T1-T3 (augmented track) — retired variable
 
 `INCTOT - INCSS - INCWELFR` (the running variable used in
-`ipums-rdd-breadwinner-norm.R` and the old approximate BKP script) is retired
+`t2/t2-rdd-breadwinner-norm.R` and the old approximate BKP script) is retired
 in the augmented track's T1: it's incoherent as a "labor income" measure since
 it leaves capital income and non-SS/welfare transfers in. T1 replaces it with
 an explicit three-way decomposition: (a) labor earnings (INCWAGE), (b) total

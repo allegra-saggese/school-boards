@@ -16,14 +16,17 @@
 #               (regimes II and III). Averaging over households the norm never
 #               touches dilutes it; this is the wedge actually being applied.
 # =============================================================================
-suppressMessages({library(data.table); source("t3-model-solver.R")})
-source("functions.R"); source("R/paths.R")
+source(here::here("_setup.R"))
+
+# Inputs : data/processed/results/*_t3_estimates_v2_by_year.csv
+#          data/processed/panel/model_input_households.csv
+# Output : data/processed/results/YYYY-MM-DD_t3_tau_series.csv
+suppressMessages({library(data.table); source(here::here("t3", "t3-model-solver.R"))})
 
 panel_dir   <- data_path("processed", "panel")
 results_dir <- data_path("processed", "results")
 
-f <- sort(list.files(results_dir, "t3_estimates_v2_by_year.csv$", full.names = TRUE))
-est <- fread(f[length(f)])
+est <- read_newest(results_dir, "t3_estimates_v2_by_year.csv$")
 dat <- fread(file.path(panel_dir, "model_input_households.csv"), showProgress = FALSE)
 dat <- dat[is.finite(f_w) & is.finite(m_w) & f_w > 0 & m_w > 0 & is.finite(y0) &
            is.finite(f_h) & is.finite(m_h)]

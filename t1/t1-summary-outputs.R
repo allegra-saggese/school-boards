@@ -1,29 +1,24 @@
+# =============================================================================
+# T1 — summary tables
+#
+# Input  : data/interim/ipums_bkp.sqlite   (built by ipums-bkp-build-database.R)
+# Outputs: data/processed/results/YYYY-MM-DD_bkp_pure_sample_construction.csv
+#          data/processed/results/YYYY-MM-DD_bkp_pure_summary_statistics.csv
+#          data/processed/results/YYYY-MM-DD_bkp_pure_cliff_ratio_by_year.csv
+#          data/processed/results/YYYY-MM-DD_bkp_pure_beta1_by_year.csv
+#
+# Computation only — t1-figures.R draws from these CSVs. Expensive: rebuilds
+# couples for all 29 samples and fits one regression per year.
+#
+# The by-year cliff ratio and by-year beta1 are the substantive additions to
+# the replication: era buckets compress 55 years into three numbers, hiding
+# whether change was gradual, abrupt, or non-monotonic.
+# =============================================================================
 library(data.table)
-library(ggplot2)
 library(DBI)
 library(RSQLite)
-library(sandwich)
-library(lmtest)
 
-source("functions.R")
-source("R/paths.R")
-
-# =========================================================
-# Part 1 summary outputs: descriptive tables and presentation figures
-#
-# The replication script produces the regression coefficients and BKP's two
-# figures. This produces everything else a paper or talk needs:
-#
-#   1. Sample construction table  -- records -> couples, with attrition
-#   2. Summary statistics by era  -- the conventional "Table 1"
-#   3. Cliff ratio by year        -- has the threshold signature weakened?
-#   4. Coefficient plot           -- beta1 across samples, with CIs
-#   5. Coefficient BY YEAR        -- beta1 over time, with CIs
-#
-# (3) and (5) are the substantive additions: the era-bucket regressions compress
-# 55 years into three numbers, which hides whether change was gradual, abrupt,
-# or non-monotonic.
-# =========================================================
+source(here::here("_setup.R"))
 
 results_dir <- data_path("processed", "results")
 ensure_dir(results_dir)
@@ -90,7 +85,7 @@ cp[, wife_emp := as.integer(f_emp == 1)]
 cp[, era := fcase(YEAR <= 2011, "BKP era (1970-2011)", default = "Post-BKP (2012-2024)")]
 
 # ── 1) Sample construction ────────────────────────────────────────────────
-fwrite(attrition, file.path(results_dir, "bkp_pure_sample_construction.csv"))
+fwrite(attrition, dated_path(results_dir, "bkp_pure_sample_construction.csv"))
 message("\n=== 1. SAMPLE CONSTRUCTION (selected years) ===")
 print(attrition[YEAR %in% c(1970,1980,1990,2000,2010,2020,2024)])
 tot <- attrition[, lapply(.SD, sum), .SDcols = setdiff(names(attrition),"YEAR")]
@@ -112,7 +107,7 @@ sumstat <- cp[, .(
   wife_share_mean    = round(weighted.mean(z, HHWT, na.rm=TRUE), 3),
   wife_outearns_pct  = round(100*weighted.mean(z > 0.5, HHWT, na.rm=TRUE), 1)
 ), by = era][order(era)]
-fwrite(sumstat, file.path(results_dir, "bkp_pure_summary_statistics.csv"))
+fwrite(sumstat, dated_path(results_dir, "bkp_pure_summary_statistics.csv"))
 message("\n=== 2. SUMMARY STATISTICS BY ERA ===")
 print(t(sumstat))
 
@@ -136,67 +131,14 @@ cliff_yr <- rbindlist(lapply(all_years, function(y) {
   c1 <- cliff_ci(d)
   data.table(YEAR = y, cliff = c1[["est"]], lo = c1[["lo"]], hi = c1[["hi"]], n = nrow(d))
 }))
-fwrite(cliff_yr, file.path(results_dir, "bkp_pure_cliff_ratio_by_year.csv"))
+fwrite(cliff_yr, dated_path(results_dir, "bkp_pure_cliff_ratio_by_year.csv"))
 message("\n=== 3. CLIFF RATIO BY YEAR ===")
 print(cliff_yr[, .(YEAR, cliff = round(cliff,3), lo = round(lo,3), hi = round(hi,3))])
 
-p_cliff <- ggplot(cliff_yr, aes(x = YEAR, y = cliff)) +
-  geom_ribbon(aes(ymin = lo, ymax = hi), fill = "steelblue", alpha = 0.18) +
-  geom_line(colour = "steelblue4", linewidth = 0.9) +
-  geom_point(colour = "steelblue4", size = 1.8) +
-  geom_hline(yintercept = 1, linetype = "dashed", colour = "grey40") +
-  geom_vline(xintercept = 2011.5, linetype = "dotted", colour = "grey30") +
-  annotate("text", x = 2012.5, y = max(cliff_yr$hi, na.rm=TRUE),
-           label = "BKP sample ends", hjust = 0, size = 3, colour = "grey30") +
-  labs(title = "Threshold avoidance over time",
-       subtitle = paste0("Couples just below the equal-earnings threshold relative to just above ",
-                         "([0.40,0.48) vs (0.52,0.60], ±2pp donut excluded).\n",
-                         "1.0 = no avoidance. Shaded band = bootstrap 95% CI."),
-       x = NULL, y = "Below / above ratio") +
-  theme_minimal(base_size = 11)
-save_plot("bkp_pure_cliff_ratio_by_year.png", { print(p_cliff) }, width = 2000, height = 1200)
 
-message("\nwrote: sample construction, summary statistics, cliff-by-year (csv + png)")
+message("\nwrote: sample construction, summary statistics, cliff-by-year")
 
-# ── 4) Coefficient plot: beta1 across samples, with CIs ───────────────────
-# Reads the coefficients the replication already produced rather than refitting.
-coef_f <- file.path(results_dir, "bkp_pure_table23_era_comparison.csv")
-if (file.exists(coef_f)) {
-  cf <- fread(coef_f)
-  cf[, `:=`(lo = beta1 - 1.96*se, hi = beta1 + 1.96*se)]
-  cf[, spec := fcase(grepl("col 1", outcome), "Col 1: linear",
-                     grepl("col 2", outcome), "Col 2: cubic",
-                     grepl("col 4", outcome), "Col 4: cubic + children",
-                     default = "other")]
-  cf[, dv := fifelse(grepl("Wife LFP", outcome), "Wife's LFP", "Income gap")]
-  cf[, era_short := fcase(grepl("BKP era", era), "(a) Replication\n1970-2011",
-                          grepl("Post-BKP", era), "(b) Post-BKP\n2012-2024",
-                          grepl("UPDATED", era), "(c) Updated\n1970-2024", default = era)]
-  # BKP's published values for reference lines
-  bkp_ref <- data.table(dv = c("Wife's LFP","Wife's LFP","Wife's LFP",
-                               "Income gap","Income gap","Income gap"),
-                        spec = rep(c("Col 1: linear","Col 2: cubic","Col 4: cubic + children"), 2),
-                        published = c(-0.178, -0.142, -0.143, -0.031, -0.095, -0.109))
-  cf <- merge(cf, bkp_ref, by = c("dv","spec"), all.x = TRUE)
-
-  p_coef <- ggplot(cf, aes(x = era_short, y = beta1, colour = spec)) +
-    geom_hline(yintercept = 0, colour = "grey60") +
-    geom_hline(aes(yintercept = published, colour = spec), linetype = "dashed", alpha = 0.55) +
-    geom_pointrange(aes(ymin = lo, ymax = hi), position = position_dodge(width = 0.55), size = 0.55) +
-    facet_wrap(~dv, scales = "free_y") +
-    scale_colour_manual(values = c("Col 1: linear" = "#d73027",
-                                   "Col 2: cubic" = "#4575b4",
-                                   "Col 4: cubic + children" = "#1a9850"), name = NULL) +
-    labs(title = "Effect of PrWifeEarnsMore, by sample and specification",
-         subtitle = paste0("Points with 95% CIs. Dashed lines = BKP's published estimates.\n",
-                           "Note the linear specification (red) does not replicate; the cubic does."),
-         x = NULL, y = expression(beta[1])) +
-    theme_minimal(base_size = 11) + theme(legend.position = "bottom")
-  save_plot("bkp_pure_coefficient_plot.png", { print(p_coef) }, width = 2200, height = 1200)
-  message("wrote: coefficient plot")
-}
-
-# ── 5) beta1 BY YEAR, with CIs ────────────────────────────────────────────
+# ── 4) beta1 BY YEAR ──────────────────────────────────────────────────────
 # The era buckets compress 55 years into three numbers. Estimating the same
 # specification separately by year shows whether the change was gradual or
 # abrupt, and is the natural visual for "has the norm weakened".
@@ -239,25 +181,10 @@ beta_by_year <- function(yr, nmax = 120000L) {
   data.table(YEAR = yr, beta1 = s["Pr","Estimate"], se = s["Pr","Std. Error"], n = nobs(fit))
 }
 
-message("\n=== 5. beta1 BY YEAR (cubic spec) ===")
+message("\n=== 4. beta1 BY YEAR (cubic spec) ===")
 by_year <- rbindlist(lapply(all_years, function(y) { message("  ", y); beta_by_year(y) }))
 by_year[, `:=`(lo = beta1 - 1.96*se, hi = beta1 + 1.96*se)]
-fwrite(by_year, file.path(results_dir, "bkp_pure_beta1_by_year.csv"))
+fwrite(by_year, dated_path(results_dir, "bkp_pure_beta1_by_year.csv"))
 print(by_year[, .(YEAR, beta1 = round(beta1,3), lo = round(lo,3), hi = round(hi,3), n)])
 
-p_by_year <- ggplot(by_year, aes(x = YEAR, y = beta1)) +
-  geom_ribbon(aes(ymin = lo, ymax = hi), fill = "#4575b4", alpha = 0.18) +
-  geom_line(colour = "#4575b4", linewidth = 0.9) +
-  geom_point(colour = "#4575b4", size = 1.8) +
-  geom_hline(yintercept = 0, colour = "grey55") +
-  geom_hline(yintercept = -0.142, linetype = "dashed", colour = "#d73027") +
-  annotate("text", x = min(by_year$YEAR), y = -0.142, vjust = -0.6, hjust = 0,
-           label = "BKP published (-0.142)", size = 3, colour = "#d73027") +
-  geom_vline(xintercept = 2011.5, linetype = "dotted", colour = "grey30") +
-  labs(title = "Effect of potential relative income on wife's participation, by year",
-       subtitle = paste0("Separate regression each year, BKP's cubic specification. ",
-                         "Shaded band = 95% CI.\nMore negative = stronger aversion to out-earning."),
-       x = NULL, y = expression(beta[1]~" on PrWifeEarnsMore")) +
-  theme_minimal(base_size = 11)
-save_plot("bkp_pure_beta1_by_year.png", { print(p_by_year) }, width = 2100, height = 1200)
-message("\nAll Part 1 summary outputs written.")
+message("\nT1 summary tables written. Run t1-figures.R to draw them.")

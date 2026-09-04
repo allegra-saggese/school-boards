@@ -14,14 +14,46 @@ with_date_prefix <- function(filename) {
 }
 
 # Save plots directly to data/graphs with consistent image settings.
-save_plot <- function(filename, expr, width = 1800, height = 1200, res = 180, date_prefix = TRUE) {
+#
+# bg = "white" is explicit: several themes leave the plot background
+# transparent, which renders as black in some PDF viewers and slide software.
+#
+# also_pdf = TRUE writes a vector copy alongside the PNG, for LaTeX inclusion.
+# The expression is re-evaluated on the second device rather than reusing the
+# object, so the two files are drawn from identical code.
+save_plot <- function(filename, expr, width = 1800, height = 1200, res = 180,
+                      date_prefix = TRUE, also_pdf = FALSE) {
   ensure_dir(graphs_dir())
   out_name <- if (date_prefix) with_date_prefix(filename) else filename
   out_file <- file.path(graphs_dir(), out_name)
-  png(filename = out_file, width = width, height = height, res = res)
-  on.exit(dev.off(), add = TRUE)
-  eval.parent(substitute(expr))
+  code <- substitute(expr)
+  env  <- parent.frame()
+
+  png(filename = out_file, width = width, height = height, res = res, bg = "white")
+  tryCatch(eval(code, env), finally = dev.off())
+
+  if (also_pdf) {
+    pdf(file.path(graphs_dir(), sub("\\.png$", ".pdf", out_name)),
+        width = width / res, height = height / res, bg = "white")
+    tryCatch(eval(code, env), finally = dev.off())
+  }
   invisible(out_file)
+}
+
+# Read the most recently dated file matching `pattern` from a directory.
+# Used by every figure script, so that redrawing a figure always picks up the
+# current results rather than whichever file happens to sort first.
+#
+# Date-prefixed files are preferred over undated ones. This matters because
+# results/ still holds undated files written before the date convention: digits
+# sort before letters, so a plain sort() would place the undated (stale) file
+# LAST and silently select it.
+read_newest <- function(dir_path, pattern) {
+  f <- list.files(dir_path, pattern, full.names = TRUE)
+  if (!length(f)) stop("No file matching '", pattern, "' in ", dir_path)
+  dated <- grepl("/[0-9]{4}-[0-9]{2}-[0-9]{2}_[^/]*$", f)
+  f <- if (any(dated)) sort(f[dated]) else sort(f)
+  data.table::fread(f[length(f)])
 }
 
 # Build a date-prefixed path in a directory and ensure parent exists.

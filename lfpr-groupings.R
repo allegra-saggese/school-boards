@@ -4,8 +4,12 @@ library(readr)
 library(ggplot2)
 library(knitr)
 
-source("R/paths.R")
-source("functions.R")
+source(here::here("_setup.R"))
+
+# Track A — political-income group indicators and departure descriptives.
+# Input  : data/processed/panel/*_lfpr_panel.csv        (lfpr-panel-analysis.R)
+# Outputs: data/processed/panel/YYYY-MM-DD_lfpr_panel_with_groups.csv
+#          data/processed/results/YYYY-MM-DD_lfpr_group{,_year}_stats.csv
 
 # =========================================================
 # 0) Load latest panel

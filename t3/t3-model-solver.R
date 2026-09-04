@@ -1,3 +1,6 @@
+# Sourced by every other T3 script. Defines the solver only; reads and writes
+# nothing.
+
 # =============================================================================
 # T3 — closed-form solver for the static household model with an identity norm
 #

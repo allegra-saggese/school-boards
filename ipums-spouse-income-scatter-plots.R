@@ -4,8 +4,11 @@ library(tidyr)
 library(readr)
 library(ggplot2)
 
-source("R/paths.R")
-source("functions.R")
+source(here::here("_setup.R"))
+
+# Exploratory descriptive: spouse income scatters.
+# Input  : data/processed/panel/ipums_married_oppositesex_spouse_pairs_with_kids.csv
+# Outputs: data/graphs/, data/processed/results/
 
 pair_file <- data_path("processed", "panel", "ipums_married_oppositesex_spouse_pairs_with_kids.csv")
 results_dir <- data_path("processed", "results")

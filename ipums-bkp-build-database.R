@@ -3,8 +3,11 @@ library(DBI)
 library(RSQLite)
 library(data.table)
 
-source("R/paths.R")
-source("functions.R")
+source(here::here("_setup.R"))
+
+# Downloads IPUMS USA extract #4 and builds the project database. RUN FIRST.
+# Requires IPUMS_API_KEY in .Renviron (gitignored).
+# Output : data/interim/ipums_bkp.sqlite
 
 # =========================================================
 # Build the BKP replication database from IPUMS extract v4
@@ -13,7 +16,7 @@ source("functions.R")
 #
 # WHY A SEPARATE DATABASE: this writes to ipums_bkp.sqlite, NOT the existing
 # 42GB ipums_data.sqlite. The old database stays untouched so every existing
-# script (ipums-county-household-analysis.R, ipums-rdd-breadwinner-norm.R,
+# script (ipums-county-household-analysis.R, t2/t2-rdd-breadwinner-norm.R,
 # ipums-married-household-suite.R) keeps working unchanged
 # while the BKP track moves to the new data. Once the new database is
 # validated, the old one is redundant and can be deleted to reclaim ~39GB —

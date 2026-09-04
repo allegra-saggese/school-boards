@@ -12,10 +12,23 @@
 #   5. The housing tier ladder as a figure.
 # =============================================================================
 suppressMessages({library(data.table); library(ggplot2); library(fixest)})
-source("functions.R"); source("R/paths.R")
+source(here::here("_setup.R"))
+
+# T2 — all tables and figures.
+# Input  : the RDS quadrant cache at $T2_CACHE (written by t2-empirical-quadrant.R)
+# Outputs: data/graphs/YYYY-MM-DD_t2_*.png
+#          data/processed/results/YYYY-MM-DD_t2_{balance_table,main_table,interaction_by_year}.*
 results_dir <- data_path("processed","results")
 
-q <- readRDS(Sys.getenv("T2_CACHE"))
+# Falls back to the conventional location so the script runs without the env
+# var; T2_CACHE overrides it.
+cache_path <- Sys.getenv("T2_CACHE", "")
+if (!nzchar(cache_path)) cache_path <- data_path("interim", "t2_quadrant.rds")
+if (!file.exists(cache_path)) {
+  stop("Quadrant cache not found: ", cache_path, "\n",
+       "Run t2-empirical-quadrant.R first, or point T2_CACHE at the cache.")
+}
+q <- readRDS(cache_path)
 q[, conservative := as.numeric(culture=="Conservative")]
 q[, home_value_rank := frank(home_value, ties.method="average", na.last="keep")/sum(!is.na(home_value)),
   by=.(f_STATEICP, YEAR)]

@@ -1,8 +1,12 @@
 library(data.table)
 library(ggplot2)
 
-source("functions.R")
-source("R/paths.R")
+source(here::here("_setup.R"))
+
+# T2 — donut RDD at the equal-earnings threshold.
+# Inputs : data/processed/panel/ spouse-pair panel and *_lfpr_panel_with_groups.csv
+# Outputs: data/processed/results/rdd_donut_breadwinner_norm_results.csv
+#          data/graphs/YYYY-MM-DD_rdd_donut_*.png
 
 # =========================================================
 # RDD: breadwinner norm threshold (female earned-income share = 0.5)
@@ -357,8 +361,7 @@ dec_dt[, political := fcase(
   default = NA_character_
 )]
 
-# Shared palette for the political-group graphs below. (Previously defined
-# inside the frontier block removed on 2026-08-30.)
+# Shared palette for the political-group graphs below.
 pol_colors <- c("Democratic-majority" = "#4575b4",
                 "Republican-majority" = "#d73027")
 

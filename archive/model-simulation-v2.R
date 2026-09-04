@@ -1,8 +1,7 @@
 library(data.table)
 library(ggplot2)
 
-source("functions.R")
-source("R/paths.R")
+source(here::here("_setup.R"))
 
 # =========================================================
 # Household utility model with a CONTINUOUS breadwinner-norm penalty

@@ -18,8 +18,7 @@
 
 library(data.table)
 source("t3-model-solver.R")
-source("functions.R")
-source("R/paths.R")
+source(here::here("_setup.R"))
 
 panel_dir   <- data_path("processed", "panel")
 results_dir <- data_path("processed", "results")

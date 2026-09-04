@@ -1,72 +1,58 @@
 # =============================================================================
-# T2 -- EMPIRICAL: the culture x wealth quadrant
+# T2 — the culture x wealth quadrant
 #
-# PART 2 of three. T1 is the BKP replication (ipums-bkp-pure-replication.R);
-# T3 is the theoretical household utility model. T2 is EXPLORATORY by design:
-# it does not identify a causal effect. It asks whether a breadwinner norm is
-# visible at all, and if so whether its strength is elastic to WEALTH or to
-# CULTURE.
+# Inputs : data/processed/panel/*_lfpr_panel_with_groups.csv
+#          data/interim/ipums_bkp.sqlite
+#          housing lookup from ipums-build-housing-merge.R
+# Outputs: data/processed/results/YYYY-MM-DD_t2_*.csv
+#          RDS cache at $T2_CACHE_WRITE, read by t2-figures.R via $T2_CACHE
 #
-# DESIGN -- sort married couples into a 2x2 and compare the wife's labour
-# supply across the four cells:
+# EXPLORATORY by design — this identifies no causal effect. It asks whether a
+# breadwinner norm is visible at all, and if so whether its strength is elastic
+# to WEALTH or to CULTURE. Married couples are sorted into a 2x2 and the wife's
+# labour supply compared across cells, on both margins (does she participate;
+# given participation, how many hours):
 #
 #                        not wealthy          wealthy
 #     conservative   |  cons / poor      |  cons / wealthy  |
 #     progressive    |  prog / poor      |  prog / wealthy  |
 #
-# on two margins, because a norm can bind on either:
-#     EXTENSIVE -- does she participate at all (LFP)
-#     INTENSIVE -- given participation, how many hours
-#
 # PROXIES
-#   culture : county presidential vote margin (Republican- vs Democratic-majority)
-#   wealth  : HOUSING -- house value, and ownership free of a mortgage
+#   culture : county presidential vote margin
+#   wealth  : housing — house value, and ownership free of a mortgage
 #
-# WHY HOUSING IS THE WEALTH AXIS
-# An earlier version used reported asset income (INCINVST). That proxy is weak
-# and getting weaker: positive for 23.9% of adults in 1980 but only 8-9% by
-# 2022, which is reporting decay plus the migration of assets into tax-deferred
-# accounts that pay no RECEIVED dividend. Housing replaces it because home
-# equity is the median US household's dominant asset, ownership is reported for
-# ~70% of households, and VALUEH is a LEVEL rather than a binary "reports
-# something". INCINVST is retained in Section 6 as ONE robustness row only.
+# WHY HOUSING IS THE WEALTH AXIS. Home equity is the median household's
+# dominant asset, ownership is reported for ~70% of households, and VALUEH is a
+# LEVEL rather than a binary "reports something". It also separates two forces
+# with OPPOSITE SIGNS that a single asset-income measure blends into an
+# uninformative null:
+#   LEVERAGE — an expensive house carries a mortgage payment, which requires a
+#              second income. Pushes her INTO the labour force.
+#   WEALTH   — owning free and clear needs no debt service. Lets her OUT.
+# INCINVST is retained in Section 6 as one robustness row.
 #
-# Housing also separates two things the income proxy blended together, which
-# turned out to matter more than the coverage gain:
-#   LEVERAGE -- an expensive house carries a mortgage payment, which REQUIRES
-#               a second income. Pushes her INTO the labour force.
-#   WEALTH   -- owning free and clear needs no debt service. Lets her OUT.
-# These have opposite signs. Averaging them is why the asset-income main effect
-# came out an uninformative null.
-#
-# THE ONE THING THIS SCRIPT MUST NOT DO
-# The wealth axis must be something other than the husband's pay-cheque, or the
-# quadrant silently re-measures the income gradient T1 already estimated. Two
-# guards:
+# TWO GUARDS, without which the quadrant silently re-measures the income
+# gradient T1 already estimated:
 #   (a) house value is ranked WITHIN STATE x YEAR. A national dollar cut would
-#       encode geography as wealth -- and geography is also the culture axis,
-#       which would manufacture exactly the interaction being tested for.
-#   (b) every regression conditions on the HUSBAND's labour-income decile, never
-#       the couple's. Couple labour income contains HER earnings, so ranking on
-#       it conditions on the dependent variable: a non-working wife falls into a
-#       lower decile by construction. Section 6 keeps that contaminated
-#       specification side by side so the size of the bad-control bias stays
-#       visible rather than hidden.
+#       encode geography as wealth — and geography is also the culture axis,
+#       manufacturing the very interaction being tested for.
+#   (b) every regression conditions on the HUSBAND's labour-income decile,
+#       never the couple's. Couple income contains HER earnings, so ranking on
+#       it conditions on the dependent variable. Section 6 keeps the
+#       contaminated specification alongside so the bias stays visible.
 #
 # LIMITATIONS
-#   * County vote margin is CONTEXTUAL -- the politics of the place, not of the
-#     couple. Cell assignment is measured with error, so every culture estimate
-#     is attenuated toward zero. It also cannot separate ideology from anything
-#     else varying across counties; state FE absorb the coarsest version.
+#   * Vote margin is CONTEXTUAL — the politics of the place, not the couple.
+#     Cell assignment is measured with error, so culture estimates are
+#     attenuated. State FE absorb the coarsest confounding.
 #   * County is identified for only ~61% of ACS households, skewed large/urban.
-#   * Repeated cross-sections. No couple is observed twice.
-#   * Wealth and labour supply are a JOINT household choice. Nothing here is a
-#     causal estimate.
+#   * Repeated cross-sections; no couple is observed twice.
+#   * Wealth and labour supply are a joint household choice.
 #   * Housing data (extract usa:6) covers 2012-2020, matching the political
 #     window that already bounds T2.
 #
-# NOTE ON SCOPE: the Bazzi et al. frontier-culture measure has been removed from
-# this analysis and from the project. Do not reintroduce it here.
+# The Bazzi et al. frontier-culture measure was removed from the project on
+# 2026-08-30. Do not reintroduce it here.
 # =============================================================================
 
 library(data.table)
@@ -75,14 +61,13 @@ library(DBI)
 library(RSQLite)
 library(fixest)
 
-source("functions.R")
-source("R/paths.R")
+source(here::here("_setup.R"))
 
 # ── 0) Config ────────────────────────────────────────────────────────────────
 t2_years <- 2012:2020     # bounded by county presidential vote data
 age_lo   <- 18L
 age_hi   <- 65L
-donut_primary <- 0.02     # matches ipums-rdd-breadwinner-norm.R
+donut_primary <- 0.02     # matches t2/t2-rdd-breadwinner-norm.R
 rdd_bw        <- 0.20
 
 panel_dir   <- data_path("processed", "panel")
@@ -113,8 +98,10 @@ wmean <- function(x, w) {
   sum(x[ok] * w[ok]) / sum(w[ok])
 }
 
-cache_path <- Sys.getenv("T2_CACHE_WRITE",
-                         file.path(tempdir(), "t2_quad_sample.rds"))
+# Persistent by default so t2-figures.R finds it with no environment set up;
+# T2_CACHE_WRITE overrides.
+cache_path <- Sys.getenv("T2_CACHE_WRITE", "")
+if (!nzchar(cache_path)) cache_path <- data_path("interim", "t2_quadrant.rds")
 cache_env  <- Sys.getenv("T2_CACHE", "")
 use_cache  <- nzchar(cache_env) && file.exists(cache_env)
 
@@ -269,7 +256,7 @@ quad[, `:=`(
   ln_m_labinc = log1p(pmax(m_labinc, 0))
 )]
 
-# Control set. nchild replaces the old binary any_kids: the participation
+# Control set. nchild enters as a count, not a binary: the participation
 # response to a second and third child is not the same as to the first.
 ctrl <- paste("f_age + I(f_age^2) + m_age + f_college + m_college +",
               "nchild + I(nchild^2) + ln_m_labinc")
@@ -430,7 +417,7 @@ print(kid_coefs[, .(nchild, term, est_pp = round(100 * estimate, 2),
 fwrite(kid_coefs, dated_path(results_dir, "t2_children_decomposition.csv"))
 
 # ── 11) The donut kink RDD, with state fixed effects ────────────────────────
-# ipums-rdd-breadwinner-norm.R Section 10 runs this with YEAR FE only and
+# t2/t2-rdd-breadwinner-norm.R Section 10 runs this with YEAR FE only and
 # unclustered SEs. Both are corrected here: state FE force a within-state
 # comparison, and clustering on county respects the level at which the culture
 # proxy is assigned.

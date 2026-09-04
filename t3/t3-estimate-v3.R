@@ -1,45 +1,40 @@
 # =============================================================================
-# T3 — estimation with PREFERENCE HETEROGENEITY: (alpha, f, sigma_kappa)
+# T3 — estimation with preference heterogeneity: (alpha, f, sigma_kappa)
 #
-# WHY v2 FAILED, and it failed the same way in every year 1980-2003:
-#   the cliff fits, the aggregate corner fits, and the corner GRADIENT across
-#   the husband's wage distribution does not, by a wide margin. 2003:
-#       data   Q1 0.262  Q3 0.227  Q5 0.301   (flat, mildly U-shaped)
-#       model  Q1 0.132  Q3 0.225  Q5 0.420   (steeply rising)
-#   With a single kappa for every household, participation is a DETERMINISTIC
-#   function of (w_m, w_f, y0). Log utility then gives a strong income effect
-#   and hence a steep monotone gradient: rich husband -> wife almost certainly
-#   out, poor husband -> wife almost certainly in. Real data are far noisier.
+# Input  : data/processed/panel/model_input_households.csv
+# Outputs: data/processed/results/YYYY-MM-DD_t3_estimates_v3_by_year.csv
 #
-#   Note WHICH end breaks worst: the model puts the FEWEST corners in Q1 (13%)
-#   where the data have 26%. The fixed cost F was meant to push poor wives out
-#   and is not strong enough to. So the model is also missing whatever keeps
-#   low-income wives out of the market.
+# THE PROBLEM. With a single kappa for every household, participation is a
+# DETERMINISTIC function of (w_m, w_f, y0). Log utility then implies a strong
+# income effect and a steeply rising corner gradient across the husband's wage
+# distribution, where the data are flat and mildly U-shaped. 2003, for example:
+#       data              Q1 0.262  Q3 0.227  Q5 0.301
+#       homogeneous kappa Q1 0.132  Q3 0.225  Q5 0.420
+# The gradient breaks worst at the BOTTOM: the fixed cost F was meant to push
+# low-income wives out of the market and is not strong enough to.
 #
-# THE FIX. Draw kappa from a distribution instead of fixing it:
+# THE FIX. Draw kappa from a distribution:
 #       kappa_i = kappa_bar * exp(sigma*e_i - sigma^2/2),   e_i ~ N(0,1)
-#   (the -sigma^2/2 keeps E[kappa] = kappa_bar, so dispersion is added without
-#   shifting the mean and disturbing the v2 calibration.)
-#   This flattens the gradient from BOTH ends at once: high-kappa draws put
-#   corners in at the bottom, low-kappa draws take them out at the top.
+# The -sigma^2/2 term holds E[kappa] = kappa_bar, adding dispersion without
+# shifting the mean. This flattens the gradient from both ends at once:
+# high-kappa draws put corners in at the bottom, low-kappa draws take them out
+# at the top.
 #
-# DRAWN FROM A COMMON DISTRIBUTION FOR BOTH SPOUSES. Same kappa_bar, same
-# sigma. Letting women draw a higher kappa would assume a stronger female taste
-# for home production -- which is the thing the norm is supposed to explain, and
-# would leave alpha unidentified. All gender asymmetry must still come from the
-# wage gap and from alpha.
+# ONE DISTRIBUTION FOR BOTH SPOUSES — same kappa_bar, same sigma. Letting women
+# draw a higher kappa would assume a stronger female taste for home production,
+# which is the thing the norm is meant to explain, and would leave alpha
+# unidentified. All gender asymmetry must come from the wage gap and alpha.
 #
 # COMMON RANDOM NUMBERS: the kappa draws are made ONCE and held fixed across
-# optimiser iterations. Otherwise the objective is stochastic and Nelder-Mead
-# chases simulation noise instead of the parameters.
+# optimiser iterations, or the objective is stochastic and Nelder-Mead chases
+# simulation noise instead of the parameters.
 #
-# PARAMETERS (3) vs MOMENTS (5) -- still over-identified.
+# 3 PARAMETERS, 5 MOMENTS — still over-identified.
 # =============================================================================
 
 library(data.table)
-source("t3-model-solver.R")
-source("functions.R")
-source("R/paths.R")
+source(here::here("_setup.R"))
+source(here::here("t3", "t3-model-solver.R"))
 
 panel_dir   <- data_path("processed", "panel")
 results_dir <- data_path("processed", "results")

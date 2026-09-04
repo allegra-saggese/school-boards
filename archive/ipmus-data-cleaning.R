@@ -24,7 +24,7 @@ library(ipumsr)
 library(RSQLite)
 library(DBI)
 
-source("R/paths.R")
+source(here::here("_setup.R"))
 
 zip_dir  <- ext_path("data", "data-zipped") # Where GRF (spatial) data is 
 data_dir <- ext_path("data", "grf-unzipped")  # Destination folder
