@@ -3,6 +3,10 @@ library(tidyr)
 library(readr)
 library(ggplot2)
 library(broom)
+# Loaded after dplyr deliberately: data.table masks between/first/last, none of
+# which this script uses. Needed for the grouped aggregations in the cluster
+# diagnostics below.
+suppressPackageStartupMessages(library(data.table))
 
 source(here::here("_setup.R"))
 
@@ -59,6 +63,64 @@ cluster_ids <- function(model, data, var) {
 # Cluster-robust SEs, keeping the point estimates from the fitted model.
 cluster_se <- function(model, data, var) {
   tidy(coeftest(model, vcov = vcovCL(model, cluster = cluster_ids(model, data, var))))
+}
+
+# ---------------------------------------------------------------------------
+# Cluster diagnostics — evidence that clustering is warranted, not assumed.
+# ---------------------------------------------------------------------------
+
+# One-way intraclass correlation, unbalanced clusters. The share of variance
+# that is BETWEEN clusters. ICC = 0 means clustering changes nothing.
+# n0 is the size-adjusted mean cluster size that enters the Moulton factor.
+icc_oneway <- function(x, g) {
+  d  <- data.table::data.table(x = as.numeric(x), g = g)
+  s  <- d[, .(n = .N, m = mean(x)), by = g]
+  gm  <- mean(d$x)
+  msb <- sum(s$n * (s$m - gm)^2) / (nrow(s) - 1)
+  msw <- d[, sum((x - mean(x))^2), by = g][, sum(V1)] / (nrow(d) - nrow(s))
+  n0  <- (sum(s$n) - sum(s$n^2)/sum(s$n)) / (nrow(s) - 1)
+  vb  <- (msb - msw) / n0
+  c(icc = max(vb / (vb + msw), 0), n0 = n0, n_clusters = nrow(s))
+}
+
+# Breusch-Pagan / Baltagi-Li LM test for cluster effects.
+# H0: residuals are independent within cluster. Asymptotically N(0,1), so a
+# large positive z rejects independence and says clustering is required.
+lm_cluster_test <- function(e, g) {
+  d <- data.table::data.table(e = as.numeric(e), g = g)
+  s <- d[, .(sum_e = sum(e), sum_e2 = sum(e^2), Tg = .N), by = g]
+  s2 <- sum(d$e^2) / nrow(d)
+  sum(s$sum_e^2 - s$sum_e2) / (sqrt(2 * sum(s$Tg * (s$Tg - 1))) * s2)
+}
+
+# Moulton (1990) factor, per regressor: sqrt(1 + rho_x * rho_e * (n0 - 1)).
+# rho_x is each REGRESSOR's own within-cluster correlation — not assumed to be
+# 1. It is near 1 for county-level variables like `conservative` and much
+# smaller for interactions that vary within county, which is exactly why the
+# terms inflate by different amounts. Comparing this prediction against the
+# realised vcovCL inflation is an independent check that the clustered SEs are
+# real and not an artifact of the estimator.
+cluster_diagnostics <- function(model, data, model_name, cluster_vars) {
+  e <- residuals(model)
+  X <- model.matrix(model)
+  terms_of_interest <- grep("conservative", colnames(X), value = TRUE)
+  rbindlist(lapply(cluster_vars, function(v) {
+    g     <- cluster_ids(model, data, v)
+    re    <- icc_oneway(e, g)
+    z     <- lm_cluster_test(e, g)
+    se_cl <- sqrt(diag(vcov(model)))
+    se_cr <- sqrt(diag(vcovCL(model, cluster = g)))
+    rbindlist(lapply(terms_of_interest, function(tm) {
+      rx <- icc_oneway(X[, tm], g)[["icc"]]
+      data.table::data.table(
+        model = model_name, cluster = v,
+        n_clusters = re[["n_clusters"]], mean_cluster_size = round(re[["n0"]]),
+        rho_e = re[["icc"]], lm_z = z, lm_p = 2 * pnorm(-abs(z)),
+        term = tm, rho_x = rx,
+        moulton_predicted = sqrt(1 + rx * re[["icc"]] * (re[["n0"]] - 1)),
+        inflation_observed = unname(se_cr[tm] / se_cl[tm]))
+    }))
+  }))
 }
 
 # One model, both SE flavours, stacked and labelled.
@@ -156,20 +218,38 @@ hh_specs <- list(
        data = "hh")
 )
 
-hh_results <- lapply(hh_specs, function(s) {
+hh_fits <- lapply(hh_specs, function(s) {
   message("  fitting ", s$name, " ...")
   d   <- get(s$data)
   # weights must be named as a COLUMN of `data`: lm evaluates it in the
   # formula's environment (global here), so a local object is not visible.
-  fit <- lm(s$f, data = d, weights = HHWT)
-  out <- both_ses(fit, d, s$name, hh_clusters)
+  fit  <- lm(s$f, data = d, weights = HHWT)
+  out  <- both_ses(fit, d, s$name, hh_clusters)
+  diag <- cluster_diagnostics(fit, d, s$name, hh_clusters)
   rm(fit); invisible(gc(verbose = FALSE))
-  out
+  list(results = out, diagnostics = diag)
 })
 
-results_2b  <- hh_results[[2]]           # kept for the coefficient plot below
-hh_ols_out  <- bind_rows(hh_results) %>%
+results_2b  <- hh_fits[[2]]$results      # kept for the coefficient plot below
+hh_ols_out  <- bind_rows(lapply(hh_fits, `[[`, "results")) %>%
   filter(!grepl("^year_fac", term))      # drop year FE rows
+
+# ---- cluster diagnostics output --------------------------------------------
+hh_diag <- rbindlist(lapply(hh_fits, `[[`, "diagnostics"))
+write_csv(hh_diag, file.path(results_dir, "ols_hh_cluster_diagnostics.csv"))
+
+message("\n=== Are residuals correlated within cluster? ===")
+summ <- unique(hh_diag[, .(model, cluster, n_clusters, mean_cluster_size,
+                           rho_e = round(rho_e, 5), lm_z = round(lm_z, 1),
+                           lm_p = signif(lm_p, 3))])
+print(summ)
+message("H0 = residuals independent within cluster. Large positive z rejects it.")
+message("\n=== Moulton predicted vs realised SE inflation ===")
+print(hh_diag[grepl("quintile_fac.*conservative|^conservative$", term),
+              .(model = substr(model, 1, 2), cluster, term = sub("quintile_fac", "Q", term),
+                rho_x = round(rho_x, 3),
+                predicted = round(moulton_predicted, 2),
+                observed  = round(inflation_observed, 2))])
 
 write_csv(hh_ols_out, file.path(results_dir, "ols_hh_hours_results.csv"))
 message("Household OLS results written.")

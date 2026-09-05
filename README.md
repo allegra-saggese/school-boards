@@ -231,6 +231,26 @@ clustered. County clustering (430 clusters) is the primary specification;
 state clustering (45 clusters) is the conservative check for spatial
 correlation within states.
 
+**That clustering is warranted is tested, not assumed** —
+`ols_hh_cluster_diagnostics.csv`, one row per model × cluster level × term:
+
+| Column | What it is |
+|---|---|
+| `rho_e` | Intraclass correlation of the residuals. 0 would mean clustering changes nothing |
+| `lm_z`, `lm_p` | Breusch-Pagan / Baltagi-Li LM test. H0 = residuals independent within cluster |
+| `rho_x` | The *regressor's* own within-cluster correlation |
+| `moulton_predicted` | Moulton (1990) factor, `sqrt(1 + rho_x·rho_e·(n0−1))` |
+| `inflation_observed` | Realised `clustered SE / classical SE` |
+
+Residual ICC is small (0.003–0.009) but cluster sizes are large (~5,000 per
+county), and that product is what matters: the LM test rejects independence in
+every model at z = 545–2,337. The Moulton factor predicts the inflation from
+first principles and lands in the same range as what `vcovCL` actually
+produces, so the wider SEs are a real property of the data rather than an
+artifact of the estimator. `rho_x` is why terms inflate unequally — it is ~0.88
+for the county-level `conservative` main effect and ~0.14 for interactions that
+vary within a county.
+
 **Limitations.** Vote margin is contextual (the place, not the couple), so
 culture estimates are attenuated. County is identified for only ~61% of ACS
 households. Repeated cross-sections; wealth and labour supply are jointly
