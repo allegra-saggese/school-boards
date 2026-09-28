@@ -84,10 +84,12 @@ save_plot("t3_model_vs_data_over_time.png", {
     scale_colour_manual(values = c(Data = "#111111", Model = "#B2182B")) +
     scale_linetype_manual(values = c(Data = "solid", Model = "22")) +
     labs(title = "Model against data, every year 1980-2024",
-         subtitle = paste0("Top row: the two moments the model was fitted to.  Bottom row: two moments held back entirely.\n",
-                           "The untargeted moments track the data to within 0.017 and 0.014 on average across 27 years."),
+         subtitle = sprintf(paste0("Top row: the two moments the model was fitted to.  Bottom row: two moments held back entirely.\n",
+                                   "The untargeted moments track the data to within %.3f and %.3f on average across %d years."),
+                            mean(abs(d$model_hshare - d$data_hshare)),
+                            mean(abs(d$model_outearn - d$data_outearn)), nrow(d)),
          x = NULL, y = NULL, colour = NULL, linetype = NULL,
-         caption = "Two free parameters (alpha, f) estimated separately each year against five targeted moments.") +
+         caption = "Two free parameters (alpha, f) estimated separately each year against two targeted moments (exactly identified).") +
     base_theme)
 }, width = 2400, height = 1500)
 
@@ -155,8 +157,8 @@ save_plot("t3_corner_gradient_limitation.png", {
     scale_linetype_manual(values = c(Data = "solid", Model = "22")) +
     scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
     labs(title = "The model's known limitation: it puts non-participation in the wrong households",
-         subtitle = paste0("Share of wives not working, by the husband's wage quintile. The model matches the AGGREGATE\n",
-                           "corner share almost exactly, but assigns it by the income effect — too few non-workers among\n",
+         subtitle = paste0("Share of wives not working, by the husband's wage quintile. UNTARGETED: only the aggregate\n",
+                           "corner share is fitted. The model assigns it by the income effect — too few non-workers among\n",
                            "low-earning husbands, too many among high-earning ones. In the data his wage barely predicts it."),
          x = NULL, y = "Wives not working", colour = NULL, linetype = NULL,
          caption = paste0("Tested and rejected as explanations: wage selection (alpha moves 18% across an extreme range) and ",
@@ -209,6 +211,49 @@ save_plot("t3_hours_earnings_wife_vs_husband.png", {
     base_theme + theme(panel.spacing = unit(1.4, "lines")))
 }, width = 2600, height = 1150)
 
+# ── 7. untargeted intensive-margin tests by husband's-wage quintile ─────────
+# Group (C) of the moment report. Each gradient exists MECHANICALLY at
+# alpha = 0 (wage composition: high-wage husbands out-earn their wives), so the
+# raw Q1 -> Q5 slope is not evidence. The test is where the DATA sit relative
+# to the MODEL and the NO-NORM baseline, the same model with alpha = 0 and F,
+# kappa unchanged. Pooled over the ACS years: lines are the mean across years,
+# bands the min-max range across years. Decennial years are excluded from the
+# pooling (different sample design; convention 1 above).
+save_plot("t3_untargeted_by_quintile.png", {
+  acs <- d[era == "ACS"]
+  specs <- list(
+    cliff_Q    = "Cliff ratio within quintile\n(mass just below 0.5 / just above)",
+    overhrs_Q  = "Dual earners: share where\nshe works more hours than he does",
+    hshareDE_Q = "Dual earners: her share\nof the couple's hours")
+  pd <- rbindlist(lapply(names(specs), function(nm)
+    rbindlist(lapply(1:5, function(q)
+      rbindlist(lapply(c(Data = "data_", Model = "model_", `No norm (alpha = 0)` = "nonorm_"),
+        function(pfx) { v <- acs[[paste0(pfx, nm, q)]]
+          data.table(mean = mean(v, na.rm = TRUE), lo = min(v, na.rm = TRUE),
+                     hi = max(v, na.rm = TRUE)) }), idcol = "src")[, q := q]))[,
+      panel := specs[[nm]]]))
+  pd[, panel := factor(panel, levels = unlist(specs))]
+  pd[, src := factor(src, levels = c("Data", "Model", "No norm (alpha = 0)"))]
+  cols <- c(Data = "#111111", Model = "#B2182B", `No norm (alpha = 0)` = "#6BAED6")
+  print(ggplot(pd, aes(q, mean, colour = src, fill = src)) +
+    geom_ribbon(aes(ymin = lo, ymax = hi), alpha = 0.12, colour = NA) +
+    geom_line(aes(linetype = src), linewidth = 0.95) + geom_point(size = 2) +
+    facet_wrap(~panel, scales = "free_y", ncol = 3) +
+    scale_colour_manual(values = cols) + scale_fill_manual(values = cols) +
+    scale_linetype_manual(values = c(Data = "solid", Model = "22", `No norm (alpha = 0)` = "solid")) +
+    scale_x_continuous(breaks = 1:5, labels = paste0("Q", 1:5)) +
+    labs(title = "Untargeted tests: the intensive margin by husband's wage",
+         subtitle = paste0("None of these moments was fitted. Each gradient exists even without the norm (blue), because\n",
+                           "high-wage husbands out-earn their wives mechanically. The test is whether the data sit where the\n",
+                           "model puts them (red) rather than where the no-norm baseline does."),
+         x = "Husband's wage quintile (fixed on the data)", y = NULL,
+         colour = NULL, fill = NULL, linetype = NULL,
+         caption = sprintf(paste0("Lines: mean over the %d ACS years %d-%d. Bands: range across those years. ",
+                                  "No-norm baseline: same model and F, kappa, alpha = 0."),
+                           nrow(acs), min(acs$YEAR), max(acs$YEAR))) +
+    base_theme)
+}, width = 2600, height = 1150)
+
 # ── console summary ─────────────────────────────────────────────────────────
 cat(sprintf("\ntau (binding) 1980 %.3f -> 2024 %.3f  (%+.0f%%)\n",
     tau[YEAR == 1980]$tau_binding, tau[YEAR == 2024]$tau_binding,
@@ -221,4 +266,4 @@ for (nm in c("hrs", "ern", "wg")) {
         wg = "hourly wage (real)")[nm],
       100 * (e$Wife / b$Wife - 1), 100 * (e$Husband / b$Husband - 1)))
 }
-message("wrote 6 T3 figures to data/graphs/")
+message("wrote 7 T3 figures to data/graphs/")

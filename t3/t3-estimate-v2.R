@@ -9,10 +9,12 @@
 # an equal proportional tax on hers. alpha is therefore an HOURS parameter, and
 # its empirical signature is bunching at equal earnings (the cliff).
 #
-# ONE NORM PARAMETER, NOT TWO. A relative-earnings norm cannot move
-# participation at all: the corner share is invariant to alpha at every value
-# tested, because V = 0 at the KINK as well as at the corner, and bunching
-# preserves her earnings while withdrawing does not.
+# ONE NORM PARAMETER, NOT TWO. A relative-earnings norm barely moves
+# participation: V = 0 at the KINK as well as at the corner, and bunching
+# preserves her earnings while withdrawing does not. This is NOT a theorem —
+# the kink pays a second fixed cost F that the corner does not — so the norm can
+# push her out only when W_III < W_IV < W_I. How many such couples exist is
+# verified on the data each year (pct_f_exit_any below).
 #
 #   alpha -> hours; the cliff; the intensive margin. This is the norm.
 #   F     -> the corner. A TECHNOLOGY: the goods cost of replacing home
@@ -26,14 +28,33 @@
 # median household income, so it needs no external calibration and deflates
 # itself across a 44-year sample.
 #
-# 5 MOMENTS, 2 PARAMETERS — over-identified, so the fit is testable:
-#   cliff ratio                             -> alpha
-#   corner share overall                    -> f
-#   corner share by husband's-wage quintile -> tests F's FUNCTIONAL FORM. A
-#     goods cost has utility burden F/C, which falls with resources, implying a
-#     specific gradient; a flatter or steeper one rejects the form.
-# Held back as the out-of-sample test: wife's share of couple hours, and the
-# share of couples where she out-earns him.
+# 2 MOMENTS, 2 PARAMETERS — exactly identified:
+#   cliff ratio            -> alpha
+#   corner share overall   -> f
+# With as many moments as parameters the estimates do not depend on the
+# weighting of the loss, and the loss at the optimum should be ~0 (reported;
+# a value well above 0 means the targets are not jointly attainable). The
+# previous 5-moment version also targeted the corner share in quintiles Q1/Q3/Q5
+# of the husband's wage. That made the estimates depend on an arbitrary
+# identity weighting, and its Q1/Q5 misfit was a failed over-identification
+# test (J far above the chi2(3) critical value 7.8) that was being reported as
+# fit. Those three moments are now UNTARGETED tests, as is everything below.
+#
+# Reported in three groups:
+#   (A) TARGETED — cliff, corner. Fit is expected by construction; not evidence.
+#   (B) UNTARGETED, aggregate — wife's share of couple hours, share of couples
+#       where she out-earns him, corner share in Q1/Q3/Q5.
+#   (C) UNTARGETED, by husband's-wage quintile — the intensive-margin tests
+#       cliff_Q, overhrs_Q, hshareDE_Q, each as DATA / MODEL / NO NORM.
+#
+# MODEL CHECKS, per year on the full sample at the fitted (alpha, f):
+#   pct_atT            share of households with h_i = T (expect 0: T binds on
+#                      no one, so T = 8,760 is not doing any work)
+#   pct_switch_hat     share whose participation pattern differs between
+#                      alpha = 0 and alpha-hat (expect ~0: the norm is an hours
+#                      mechanism)
+#   pct_f_exit_any     share of wives the norm would push to the corner at ANY
+#                      alpha, i.e. W_III < W_IV < W_I (see the check itself)
 #
 # Each year is estimated separately (repeated cross-sections), with a
 # continuous optimiser rather than a grid — a grid quantises alpha into
@@ -76,6 +97,7 @@ moments <- function(h_m, h_f, w_m, w_f, wt, qgrp) {
   base <- c(cliff   = cliff_ratio(z, wt),
             corner  = sum(wt[h_f <= 0]) / sum(wt),
             cornerQ1= cs(qgrp == 1L), cornerQ3 = cs(qgrp == 3L), cornerQ5 = cs(qgrp == 5L),
+            corner_m= sum(wt[h_m <= 0]) / sum(wt),   # husband not working
             hshare  = sum(wt * h_f) / sum(wt * (h_f + h_m)),
             outearn = sum(wt[!is.na(z) & z > 0.5]) / sum(wt[!is.na(z)]))
   # UNTARGETED intensive-margin tests by husband's-wage quintile q = 1..5.
@@ -98,7 +120,7 @@ moments <- function(h_m, h_f, w_m, w_f, wt, qgrp) {
   }))
   c(base, byq)
 }
-TARGETS <- c("cliff", "corner", "cornerQ1", "cornerQ3", "cornerQ5")
+TARGETS <- c("cliff", "corner")
 
 out <- rbindlist(lapply(years_do, function(yr) {
   d <- dat[YEAR == yr]
@@ -142,26 +164,70 @@ out <- rbindlist(lapply(years_do, function(yr) {
   a1 <- exp(fit$par[1]); f <- plogis(fit$par[2]) * 0.5
   ms <- sim(fit$par)
 
-  message(sprintf("  FIT   alpha %.4e | f %.4f (F = $%s) | loss %.5f",
+  message(sprintf("  FIT   alpha %.4e | f %.4f (F = $%s) | loss %.2e (exactly identified: expect ~0)",
                   a1, f, format(round(f*ymed), big.mark=","), fit$value))
-  message(sprintf("  MODEL cliff %.3f corner %.3f (Q1 %.3f Q3 %.3f Q5 %.3f) hshare %.3f outearn %.3f",
-                  ms["cliff"], ms["corner"], ms["cornerQ1"], ms["cornerQ3"],
-                  ms["cornerQ5"], ms["hshare"], ms["outearn"]))
-  message("        hshare & outearn are UNTARGETED -- the out-of-sample test.")
   # NO-NORM BASELINE. Every quintile gradient below exists even at alpha = 0,
   # because husbands in Q5 out-earn their wives mechanically (wage
   # composition). The norm's contribution in quintile q is MODEL - MODEL0;
   # the test is whether the DATA sit where MODEL puts them, not where MODEL0 does.
   s0  <- solve_household(dS$m_w, dS$f_w, dS$y0, f * ymed, 0, kS_m, kS_f, 0, 0)
   ms0 <- moments(s0$h_m, s0$h_f, dS$m_w, dS$f_w, dS$HHWT, qS)
+
+  # ── Report: (A) targeted, (B) untargeted aggregate, (C) untargeted by quintile
+  row3 <- function(nm) sprintf("    %-10s DATA %.3f | MODEL %.3f | NO NORM %.3f",
+                               nm, md[nm], ms[nm], ms0[nm])
+  message("  (A) TARGETED -- fit is by construction, not evidence")
+  for (nm in TARGETS) message(row3(nm))
+  message("  (B) UNTARGETED, aggregate")
+  for (nm in c("hshare", "outearn", "cornerQ1", "cornerQ3", "cornerQ5", "corner_m")) message(row3(nm))
+  message("  (C) UNTARGETED, by husband's-wage quintile (Q1..Q5); MAE = mean |x - DATA|")
   qtab <- function(m, nm) paste(sprintf("%.3f", m[paste0(nm, 1:5)]), collapse = " ")
+  qmae <- function(m, nm) mean(abs(m[paste0(nm, 1:5)] - md[paste0(nm, 1:5)]), na.rm = TRUE)
   for (nm in c("cliff_Q", "overhrs_Q", "hshareDE_Q"))
-    message(sprintf("  %-11s Q1..Q5  DATA %s | MODEL %s | NO NORM %s",
-                    nm, qtab(md, nm), qtab(ms, nm), qtab(ms0, nm)))
+    message(sprintf("    %-10s DATA %s | MODEL %s | NO NORM %s | MAE model %.3f vs no-norm %.3f",
+                    nm, qtab(md, nm), qtab(ms, nm), qtab(ms0, nm),
+                    qmae(ms, nm), qmae(ms0, nm)))
+
+  # ── Model checks, on the FULL year at the fitted (alpha, f) ─────────────────
+  # (i)  pct_atT: households on a face of the time constraint, h_i = T.
+  # (ii) pct_switch_hat: participation pattern (who works) differs between
+  #      alpha = 0 and alpha-hat.
+  # (iii) pct_f_exit_any: wives the norm would push to the corner at ANY alpha.
+  #      Her-working values (both-work, she-only) are nonincreasing in alpha,
+  #      while the values of IV (he only) and VI (neither) do not depend on it.
+  #      So once she is out she stays out as alpha rises, and the set that ever
+  #      exits is the set that exits as alpha -> infinity: W_III < W_IV < W_I.
+  #      That limit is approximated at alpha = 1, a wedge tau = C -- a tax of
+  #      tens of thousands of percent on her marginal earnings.
+  kF   <- rep(kap, nrow(d))
+  sH   <- solve_household(d$m_w, d$f_w, d$y0, f * ymed, a1, kF, kF)
+  sH0  <- solve_household(d$m_w, d$f_w, d$y0, f * ymed, 0,  kF, kF)
+  sInf <- solve_household(d$m_w, d$f_w, d$y0, f * ymed, 1,  kF, kF)
+  wt   <- d$HHWT
+  pct  <- function(x) 100 * sum(wt[x]) / sum(wt)
+  # The switch is split by spouse and direction. The wife can only EXIT as
+  # alpha rises (see (iii)); the husband can only ENTER, because the norm
+  # penalises she-only households (V = w_f*h_f, the full penalty) and so pushes
+  # a non-working husband into work, to the kink or to regime II.
+  chk <- c(pct_atT        = pct(sH$h_m >= T_ENDOW | sH$h_f >= T_ENDOW),
+           pct_switch_hat = pct((sH$h_m > 0) != (sH0$h_m > 0) | (sH$h_f > 0) != (sH0$h_f > 0)),
+           pct_f_exit_hat = pct(sH0$h_f > 0 & sH$h_f <= 0),
+           pct_f_enter_hat= pct(sH0$h_f <= 0 & sH$h_f > 0),
+           pct_m_enter_hat= pct(sH0$h_m <= 0 & sH$h_m > 0),
+           pct_m_exit_hat = pct(sH0$h_m > 0 & sH$h_m <= 0),
+           pct_f_exit_any = pct(sH0$h_f > 0 & sInf$h_f <= 0))
+  message(sprintf(paste0("  CHECKS (full year) at h = T %.4f%% | participation switch 0 -> alpha-hat %.4f%%",
+                         " (wife exits %.4f%%, enters %.4f%%; husband enters %.4f%%, exits %.4f%%)",
+                         " | wife exits at ANY alpha %.4f%%"),
+                  chk["pct_atT"], chk["pct_switch_hat"], chk["pct_f_exit_hat"],
+                  chk["pct_f_enter_hat"], chk["pct_m_enter_hat"], chk["pct_m_exit_hat"],
+                  chk["pct_f_exit_any"]))
+  rm(sH, sH0, sInf); invisible(gc())
 
   data.table(YEAR = yr, n = nrow(d), kappa = kap, y_median = ymed,
              alpha = a1, f = f, F_dollars = f * ymed,
              loss = fit$value, converged = fit$convergence == 0,
+             as.data.table(as.list(chk)),
              as.data.table(as.list(md))[, paste0("data_", names(md)) := as.list(md)][, .SD, .SDcols = patterns("^data_")],
              as.data.table(as.list(ms))[, paste0("model_", names(ms)) := as.list(ms)][, .SD, .SDcols = patterns("^model_")],
              as.data.table(as.list(ms0))[, paste0("nonorm_", names(ms0)) := as.list(ms0)][, .SD, .SDcols = patterns("^nonorm_")])
@@ -171,6 +237,7 @@ if (nrow(out)) {
   print(out[, .(YEAR, alpha, f, loss, converged,
                 data_cliff, model_cliff, data_corner, model_corner,
                 data_hshare, model_hshare)])
+  print(out[, .(YEAR, pct_atT, pct_switch_hat, pct_f_exit_hat, pct_m_enter_hat, pct_f_exit_any)])
   fwrite(out, dated_path(results_dir, "t3_estimates_v2_by_year.csv"))
   message("\nwrote t3_estimates_v2_by_year.csv")
 }
