@@ -73,11 +73,30 @@ moments <- function(h_m, h_f, w_m, w_f, wt, qgrp) {
   e_m <- w_m * h_m; e_f <- w_f * h_f
   z   <- fifelse(e_m + e_f > 0, e_f / (e_m + e_f), NA_real_)
   cs  <- function(i) sum(wt[i][h_f[i] <= 0]) / sum(wt[i])
-  c(cliff   = cliff_ratio(z, wt),
-    corner  = sum(wt[h_f <= 0]) / sum(wt),
-    cornerQ1= cs(qgrp == 1L), cornerQ3 = cs(qgrp == 3L), cornerQ5 = cs(qgrp == 5L),
-    hshare  = sum(wt * h_f) / sum(wt * (h_f + h_m)),
-    outearn = sum(wt[!is.na(z) & z > 0.5]) / sum(wt[!is.na(z)]))
+  base <- c(cliff   = cliff_ratio(z, wt),
+            corner  = sum(wt[h_f <= 0]) / sum(wt),
+            cornerQ1= cs(qgrp == 1L), cornerQ3 = cs(qgrp == 3L), cornerQ5 = cs(qgrp == 5L),
+            hshare  = sum(wt * h_f) / sum(wt * (h_f + h_m)),
+            outearn = sum(wt[!is.na(z) & z > 0.5]) / sum(wt[!is.na(z)]))
+  # UNTARGETED intensive-margin tests by husband's-wage quintile q = 1..5.
+  # The model's claim: tau = alpha*C rises with household resources, so where
+  # the norm binds, wives in high-q households cut MORE hours. Three checks,
+  # each computed identically on data and simulation:
+  #   cliff_q   : cliff ratio within quintile q (more missing mass above 0.5
+  #               => a stronger norm there)
+  #   overhrs_q : share of DUAL-EARNER couples in which she works more hours
+  #               than he does
+  #   hshareDE_q: her share of couple hours among DUAL-EARNER couples
+  dual <- h_f > 0 & h_m > 0
+  byq <- unlist(lapply(1:5, function(q) {
+    i  <- qgrp == q
+    id <- i & dual
+    setNames(c(cliff_ratio(z[i], wt[i]),
+               sum(wt[id & h_f > h_m]) / sum(wt[id]),
+               sum(wt[id] * h_f[id]) / sum(wt[id] * (h_f[id] + h_m[id]))),
+             paste0(c("cliff_Q", "overhrs_Q", "hshareDE_Q"), q))
+  }))
+  c(base, byq)
 }
 TARGETS <- c("cliff", "corner", "cornerQ1", "cornerQ3", "cornerQ5")
 
@@ -129,12 +148,23 @@ out <- rbindlist(lapply(years_do, function(yr) {
                   ms["cliff"], ms["corner"], ms["cornerQ1"], ms["cornerQ3"],
                   ms["cornerQ5"], ms["hshare"], ms["outearn"]))
   message("        hshare & outearn are UNTARGETED -- the out-of-sample test.")
+  # NO-NORM BASELINE. Every quintile gradient below exists even at alpha = 0,
+  # because husbands in Q5 out-earn their wives mechanically (wage
+  # composition). The norm's contribution in quintile q is MODEL - MODEL0;
+  # the test is whether the DATA sit where MODEL puts them, not where MODEL0 does.
+  s0  <- solve_household(dS$m_w, dS$f_w, dS$y0, f * ymed, 0, kS_m, kS_f, 0, 0)
+  ms0 <- moments(s0$h_m, s0$h_f, dS$m_w, dS$f_w, dS$HHWT, qS)
+  qtab <- function(m, nm) paste(sprintf("%.3f", m[paste0(nm, 1:5)]), collapse = " ")
+  for (nm in c("cliff_Q", "overhrs_Q", "hshareDE_Q"))
+    message(sprintf("  %-11s Q1..Q5  DATA %s | MODEL %s | NO NORM %s",
+                    nm, qtab(md, nm), qtab(ms, nm), qtab(ms0, nm)))
 
   data.table(YEAR = yr, n = nrow(d), kappa = kap, y_median = ymed,
              alpha = a1, f = f, F_dollars = f * ymed,
              loss = fit$value, converged = fit$convergence == 0,
              as.data.table(as.list(md))[, paste0("data_", names(md)) := as.list(md)][, .SD, .SDcols = patterns("^data_")],
-             as.data.table(as.list(ms))[, paste0("model_", names(ms)) := as.list(ms)][, .SD, .SDcols = patterns("^model_")])
+             as.data.table(as.list(ms))[, paste0("model_", names(ms)) := as.list(ms)][, .SD, .SDcols = patterns("^model_")],
+             as.data.table(as.list(ms0))[, paste0("nonorm_", names(ms0)) := as.list(ms0)][, .SD, .SDcols = patterns("^nonorm_")])
 }))
 
 if (nrow(out)) {

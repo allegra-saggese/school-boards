@@ -31,8 +31,9 @@ source(here::here("_setup.R"))
 #        it carries capital income and inflates the implied wage for
 #        asset-holders.
 #
-#  y0    Income entering the budget that does NOT respond to hours: capital,
-#        retirement, and transfer income.
+#  y0    Income entering the budget that does NOT respond to hours: capital
+#        income only (INCINVST, both spouses). Transfers (INCWELFR, INCSS,
+#        INCOTHER) are excluded as endogenous to participation.
 #        Built directly, not as the residual hhincome - both spouses' income:
 #        that double-counts, since capital income sits inside w*h AND is
 #        subtracted from y0.
@@ -110,11 +111,14 @@ pull_year <- function(yr) {
   d[, ann_hours  := fifelse(!is.na(weeks) & UHRSWORK %between% c(1, 99),
                             UHRSWORK * weeks, 0)]
   d[, lab_inc    := labor_income(INCWAGE, INCBUS, INCFARM, INCBUS00)]
-  # y0 components: income that does not respond to hours
-  d[, nonlab_inc := pmax(nas(INCINVST), 0, na.rm = TRUE) +
-                    pmax(nas(INCOTHER), 0, na.rm = TRUE) +
-                    pmax(nas(INCSS),    0, na.rm = TRUE) +
-                    pmax(nas(INCWELFR), 0, na.rm = TRUE)]
+  # y0 components: income that does not respond to hours. CAPITAL INCOME ONLY
+  # (interest, dividends, net rent). Transfers are excluded because they are
+  # conditional on NOT working and so are endogenous to the choice the model
+  # explains: INCWELFR (means-tested cash assistance), INCSS (for 18-65 mostly
+  # disability, which requires not working), INCOTHER (includes unemployment
+  # compensation). Including them gave non-working, low-income households
+  # mechanically higher y0, which the model then read as an income effect.
+  d[, nonlab_inc := pmax(nas(INCINVST), 0, na.rm = TRUE)]
   d[, YEAR := yr]
   d
 }
