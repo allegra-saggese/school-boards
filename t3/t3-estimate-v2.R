@@ -240,4 +240,54 @@ if (nrow(out)) {
   print(out[, .(YEAR, pct_atT, pct_switch_hat, pct_f_exit_hat, pct_m_enter_hat, pct_f_exit_any)])
   fwrite(out, dated_path(results_dir, "t3_estimates_v2_by_year.csv"))
   message("\nwrote t3_estimates_v2_by_year.csv")
+
+  # ── LaTeX tables (booktabs tabulars, for \input{} into slides/paper) ───────
+  f3 <- function(x, d = 3) formatC(x, format = "f", digits = d, big.mark = ",")
+
+  # 1. Parameter estimates by year. alpha is in utils per dollar and falls with
+  #    nominal growth -- report tau (t3-compute-tau.R) in text, alpha here only.
+  write_tex_table(out[, .(Year = YEAR,
+                          `$\\hat\\alpha \\times 10^{6}$` = f3(alpha * 1e6),
+                          `$\\hat f$` = f3(f), `$F$ (\\$)` = f3(F_dollars, 0),
+                          `$\\kappa \\times 10^{7}$` = f3(kappa * 1e7),
+                          Loss = formatC(loss, format = "e", digits = 1))],
+                  dated_path(results_dir, "t3_estimates_table.tex"))
+
+  # 2. Model checks by year (percent of households, full year, at the estimates).
+  write_tex_table(out[, .(Year = YEAR,
+                          `At $h_i = T$` = f3(pct_atT, 2),
+                          `Any switch` = f3(pct_switch_hat, 2),
+                          `Wife exits` = f3(pct_f_exit_hat, 2),
+                          `Husband enters` = f3(pct_m_enter_hat, 2),
+                          `Wife exits, any $\\alpha$` = f3(pct_f_exit_any, 2))],
+                  dated_path(results_dir, "t3_model_checks_table.tex"))
+
+  # 3-4. Moments, pooled over the ACS years in this run (decennial years are a
+  #      different sample design and are not pooled with them).
+  pool <- if (any(out$YEAR > 2000)) out[YEAR > 2000] else out
+  pm   <- function(pfx, nm) mean(pool[[paste0(pfx, nm)]], na.rm = TRUE)
+  mrow <- function(nm, lab) data.table(Moment = lab, Data = f3(pm("data_", nm)),
+                                       Model = f3(pm("model_", nm)),
+                                       `No norm ($\\alpha = 0$)` = f3(pm("nonorm_", nm)))
+  write_tex_table(rbind(
+      mrow("cliff",    "Cliff ratio"),
+      mrow("corner",   "Wife not working"),
+      mrow("hshare",   "Wife's share of couple hours"),
+      mrow("outearn",  "Wife out-earns husband"),
+      mrow("cornerQ1", "Wife not working, husband wage Q1"),
+      mrow("cornerQ3", "Wife not working, husband wage Q3"),
+      mrow("cornerQ5", "Wife not working, husband wage Q5"),
+      mrow("corner_m", "Husband not working")),
+    dated_path(results_dir, "t3_moments_table.tex"),
+    groups = list("(A) Targeted" = 2, "(B) Untargeted" = 6))
+
+  qrow <- function(pfx, nm, lab) as.data.table(c(list(Series = lab),
+            setNames(lapply(1:5, function(q) f3(pm(pfx, paste0(nm, q)))), paste0("Q", 1:5))))
+  qblock <- function(nm) rbind(qrow("data_", nm, "Data"), qrow("model_", nm, "Model"),
+                               qrow("nonorm_", nm, "No norm"))
+  write_tex_table(rbind(qblock("cliff_Q"), qblock("overhrs_Q"), qblock("hshareDE_Q")),
+    dated_path(results_dir, "t3_quintile_tests_table.tex"),
+    groups = list("Cliff ratio" = 3,
+                  "Dual earners: share where she works more hours" = 3,
+                  "Dual earners: her share of couple hours" = 3))
 }

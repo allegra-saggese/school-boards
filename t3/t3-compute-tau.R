@@ -68,3 +68,12 @@ cat("\n  (tau_approx_ymed is the median-income approximation reported earlier;\n
 cat("   compare it with tau_model to see how far off the shortcut was.)\n")
 fwrite(out, dated_path(results_dir, "t3_tau_series.csv"))
 message("\nwrote t3_tau_series.csv")
+
+# LaTeX table (booktabs tabular, for \input{} into slides/paper).
+f3 <- function(x, d = 3) formatC(x, format = "f", digits = d, big.mark = ",")
+write_tex_table(out[, .(Year = YEAR,
+                        `$\\bar C$ (\\$)` = f3(Cbar_model, 0),
+                        `$\\tau$, all` = f3(tau_model),
+                        `$\\tau$, norm binds` = f3(tau_binding),
+                        `\\% norm binds` = f3(pct_binding, 1))],
+                dated_path(results_dir, "t3_tau_table.tex"))

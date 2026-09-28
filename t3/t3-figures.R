@@ -13,6 +13,9 @@
 #      read as one continuous series.
 #   2. Targeted and untargeted moments are labelled separately. The untargeted
 #      ones were never fitted, and are the model's out-of-sample test.
+#   3. Figures carry only a title, axis labels and a legend. What each one
+#      shows, how it is computed and how to read it is documented per file in
+#      notes/t3-figures-and-tables.md -- update that file when a figure changes.
 # =============================================================================
 suppressMessages({library(data.table); library(ggplot2)})
 source(here::here("_setup.R"))
@@ -55,13 +58,9 @@ save_plot("t3_tau_over_time.png", {
                                    "Households the norm binds on" = "#B2182B")) +
     scale_y_continuous(limits = c(0, NA), labels = function(x) paste0(round(100 * x), "%")) +
     scale_x_continuous(breaks = seq(1980, 2020, 10)) +
-    labs(title = "The norm wedge over time, 1980-2024",
-         subtitle = paste0("tau = alpha x C: the implicit tax the breadwinner norm places on the wife's marginal earnings.\n",
-                           "Reported as tau rather than alpha because alpha falls 89% over this period, most of which\n",
-                           "is nominal income growth rather than any weakening of the norm."),
-         x = NULL, y = "Implicit tax on her marginal earnings",
-         colour = NULL, shape = "Sample",
-         caption = "Source: IPUMS USA 1980-2024, 16.9M married couples. One structural estimate per year.") +
+    labs(title = "The norm wedge tau, 1980-2024",
+         x = "Year", y = "tau: implicit tax on her marginal earnings",
+         colour = NULL, shape = "Sample") +
     base_theme)
 }, width = 2200, height = 1300, also_pdf = TRUE)
 
@@ -70,10 +69,10 @@ save_plot("t3_model_vs_data_over_time.png", {
   mk <- function(dv, mv, lab, grp) data.table(YEAR = d$YEAR, era = d$era,
         Data = d[[dv]], Model = d[[mv]], moment = lab, grp = grp)
   pd <- rbindlist(list(
-    mk("data_cliff",  "model_cliff",  "Cliff ratio (bunching below 0.5)", "TARGETED — fitted"),
-    mk("data_corner", "model_corner", "Corner share (wife not working)",  "TARGETED — fitted"),
-    mk("data_hshare", "model_hshare", "Wife's share of couple hours",     "UNTARGETED — never fitted"),
-    mk("data_outearn","model_outearn","Share where wife out-earns",       "UNTARGETED — never fitted")))
+    mk("data_cliff",  "model_cliff",  "Cliff ratio (bunching below 0.5)", "targeted"),
+    mk("data_corner", "model_corner", "Corner share (wife not working)",  "targeted"),
+    mk("data_hshare", "model_hshare", "Wife's share of couple hours",     "untargeted"),
+    mk("data_outearn","model_outearn","Share where wife out-earns",       "untargeted")))
   pd <- melt(pd, id.vars = c("YEAR","era","moment","grp"),
              variable.name = "src", value.name = "v")
   pd[, moment := factor(moment, levels = unique(moment))]
@@ -83,13 +82,8 @@ save_plot("t3_model_vs_data_over_time.png", {
                labeller = labeller(.multi_line = TRUE)) +
     scale_colour_manual(values = c(Data = "#111111", Model = "#B2182B")) +
     scale_linetype_manual(values = c(Data = "solid", Model = "22")) +
-    labs(title = "Model against data, every year 1980-2024",
-         subtitle = sprintf(paste0("Top row: the two moments the model was fitted to.  Bottom row: two moments held back entirely.\n",
-                                   "The untargeted moments track the data to within %.3f and %.3f on average across %d years."),
-                            mean(abs(d$model_hshare - d$data_hshare)),
-                            mean(abs(d$model_outearn - d$data_outearn)), nrow(d)),
-         x = NULL, y = NULL, colour = NULL, linetype = NULL,
-         caption = "Two free parameters (alpha, f) estimated separately each year against two targeted moments (exactly identified).") +
+    labs(title = "Model vs data, 1980-2024",
+         x = "Year", y = NULL, colour = NULL, linetype = NULL) +
     base_theme)
 }, width = 2400, height = 1500)
 
@@ -109,13 +103,8 @@ save_plot("t3_intensity_vs_exposure.png", {
     geom_hline(yintercept = 100, colour = "grey55", linewidth = 0.4) +
     geom_line(linewidth = 1.0) + geom_point(size = 1.8) +
     scale_colour_manual(values = c("#2166AC", "#B2182B", "#111111")) +
-    labs(title = "The norm's aggregate bite rose to 2006, then fell back",
-         subtitle = paste0("Indexed to 1980 = 100. Two phases. To ~2006: exposure rises fast as wives' wages converge, while\n",
-                           "intensity per affected household stays FLAT -- so the aggregate RISES 27%. After 2006: exposure\n",
-                           "plateaus and intensity falls -- so the aggregate falls back. The endpoints (-2%) hide both moves."),
-         x = NULL, y = "Index, 1980 = 100", colour = NULL,
-         caption = paste0("Intensity is flat 1980-2018 (361 vs 362 hrs); its entire decline is 2019-2024, the years of ",
-                          "worst model fit (loss 0.42 vs 0.34).")) +
+    labs(title = "Intensity vs exposure of the norm, 1980-2024",
+         x = "Year", y = "Index, 1980 = 100", colour = NULL) +
     base_theme + theme(legend.direction = "vertical"))
 }, width = 2200, height = 1350)
 
@@ -133,12 +122,8 @@ save_plot("t3_aggregate_distortion.png", {
     era_shapes +
     facet_wrap(~p, scales = "free_y", ncol = 2) +
     expand_limits(y = 0) +
-    labs(title = "The norm's aggregate cost: a hump, peaking in 2006",
-         subtitle = paste0("Counterfactual: each year re-solved with alpha = 0, holding the fixed cost and preferences fixed.\n",
-                           "6.12% of women's market hours in 1980, peaking at 7.76% in 2006, back to 6.02% by 2024.\n",
-                           "The absolute number still more than doubles, because population and exposure both grew."),
-         x = NULL, y = NULL, shape = "Sample",
-         caption = "The distortion is purely intensive: switching the norm off moves nobody into or out of the labour force.") +
+    labs(title = "Hours lost to the norm, 1980-2024",
+         x = "Year", y = NULL, shape = "Sample") +
     base_theme)
 }, width = 2400, height = 1250)
 
@@ -149,21 +134,15 @@ save_plot("t3_corner_gradient_limitation.png", {
       data.table(YEAR=d$YEAR, era=d$era, q=q, src="Data",  v=d[[paste0("data_corner",q)]]),
       data.table(YEAR=d$YEAR, era=d$era, q=q, src="Model", v=d[[paste0("model_corner",q)]])))))
   pd[, q := factor(q, levels=c("Q1","Q3","Q5"),
-        labels=c("Q1 — lowest-earning husbands","Q3 — middle","Q5 — highest-earning husbands"))]
+        labels=c("Q1 (lowest)","Q3","Q5 (highest)"))]
   print(ggplot(pd, aes(YEAR, v, colour = src, linetype = src)) +
     geom_line(linewidth = 0.85) + geom_point(size = 1.4) +
     facet_wrap(~q, ncol = 3) +
     scale_colour_manual(values = c(Data = "#111111", Model = "#B2182B")) +
     scale_linetype_manual(values = c(Data = "solid", Model = "22")) +
     scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
-    labs(title = "The model's known limitation: it puts non-participation in the wrong households",
-         subtitle = paste0("Share of wives not working, by the husband's wage quintile. UNTARGETED: only the aggregate\n",
-                           "corner share is fitted. The model assigns it by the income effect — too few non-workers among\n",
-                           "low-earning husbands, too many among high-earning ones. In the data his wage barely predicts it."),
-         x = NULL, y = "Wives not working", colour = NULL, linetype = NULL,
-         caption = paste0("Tested and rejected as explanations: wage selection (alpha moves 18% across an extreme range) and ",
-                          "preference heterogeneity\n(requires implausible dispersion and breaks the hours share). ",
-                          "Disclosed rather than fitted around; no claim in Part 3 runs through this margin.")) +
+    labs(title = "Wife not working, by husband's wage quintile",
+         x = "Year", y = "Share of wives not working", colour = NULL, linetype = NULL) +
     base_theme)
 }, width = 2500, height = 1150)
 
@@ -200,14 +179,8 @@ save_plot("t3_hours_earnings_wife_vs_husband.png", {
     scale_colour_manual(values = c(Wife = "#B2182B", Husband = "#08519C")) +
     facet_wrap(~panel, scales = "free_y", ncol = 3) +
     expand_limits(y = 0) +
-    labs(title = "Within married couples: the wife converges, the husband does not move",
-         subtitle = paste0("Married couples, both spouses 18-65, IPUMS 1980-2024. Wages are medians among couples with BOTH\n",
-                           "wages observed; hours and earnings are means over all couples. Real series deflated to 2024 dollars.\n",
-                           "Men's real median wage rose 8% in 44 years -- and was flat (index 100-101) from 1980 to 2015."),
-         x = NULL, y = NULL, colour = NULL, shape = "Sample",
-         caption = paste0("Why this matters for the model: the breadwinner norm's threshold IS his earnings. His stagnation, ",
-                          "not only her gains,\nis what pushed the share of couples the norm binds on from 15.9% to 30.3%. ",
-                          "Had his wages kept pace it would be 18.5%.")) +
+    labs(title = "Wife vs husband: hours, earnings and wages, 1980-2024",
+         x = "Year", y = NULL, colour = NULL, shape = "Sample") +
     base_theme + theme(panel.spacing = unit(1.4, "lines")))
 }, width = 2600, height = 1150)
 
@@ -235,23 +208,28 @@ save_plot("t3_untargeted_by_quintile.png", {
   pd[, panel := factor(panel, levels = unlist(specs))]
   pd[, src := factor(src, levels = c("Data", "Model", "No norm (alpha = 0)"))]
   cols <- c(Data = "#111111", Model = "#B2182B", `No norm (alpha = 0)` = "#6BAED6")
-  print(ggplot(pd, aes(q, mean, colour = src, fill = src)) +
-    geom_ribbon(aes(ymin = lo, ymax = hi), alpha = 0.12, colour = NA) +
-    geom_line(aes(linetype = src), linewidth = 0.95) + geom_point(size = 2) +
-    facet_wrap(~panel, scales = "free_y", ncol = 3) +
-    scale_colour_manual(values = cols) + scale_fill_manual(values = cols) +
-    scale_linetype_manual(values = c(Data = "solid", Model = "22", `No norm (alpha = 0)` = "solid")) +
-    scale_x_continuous(breaks = 1:5, labels = paste0("Q", 1:5)) +
-    labs(title = "Untargeted tests: the intensive margin by husband's wage",
-         subtitle = paste0("None of these moments was fitted. Each gradient exists even without the norm (blue), because\n",
-                           "high-wage husbands out-earn their wives mechanically. The test is whether the data sit where the\n",
-                           "model puts them (red) rather than where the no-norm baseline does."),
-         x = "Husband's wage quintile (fixed on the data)", y = NULL,
-         colour = NULL, fill = NULL, linetype = NULL,
-         caption = sprintf(paste0("Lines: mean over the %d ACS years %d-%d. Bands: range across those years. ",
-                                  "No-norm baseline: same model and F, kappa, alpha = 0."),
-                           nrow(acs), min(acs$YEAR), max(acs$YEAR))) +
-    base_theme)
+  # One panel per moment, assembled with patchwork, so that the cliff panel
+  # alone can take a LOG scale: the model's Q5 cliff is an order of magnitude
+  # above the data and on a linear axis it flattens everything else.
+  panel_plot <- function(lab, ylab, log_y = FALSE) {
+    g <- ggplot(pd[panel == lab], aes(q, mean, colour = src, fill = src)) +
+      geom_ribbon(aes(ymin = lo, ymax = hi), alpha = 0.12, colour = NA) +
+      geom_line(aes(linetype = src), linewidth = 0.95) + geom_point(size = 2) +
+      scale_colour_manual(values = cols) + scale_fill_manual(values = cols) +
+      scale_linetype_manual(values = c(Data = "solid", Model = "22", `No norm (alpha = 0)` = "solid")) +
+      scale_x_continuous(breaks = 1:5, labels = paste0("Q", 1:5)) +
+      labs(subtitle = lab, x = "Husband's wage quintile", y = ylab,
+           colour = NULL, fill = NULL, linetype = NULL) +
+      base_theme + theme(plot.subtitle = element_text(face = "bold", colour = "black", size = 12))
+    if (log_y) g + scale_y_log10() else g
+  }
+  print(patchwork::wrap_plots(
+          panel_plot(specs$cliff_Q,    "Ratio (log scale)", log_y = TRUE),
+          panel_plot(specs$overhrs_Q,  "Share of couples"),
+          panel_plot(specs$hshareDE_Q, "Her share of hours"), ncol = 3) +
+        patchwork::plot_layout(guides = "collect") +
+        patchwork::plot_annotation(title = "Untargeted tests by husband's wage quintile",
+                                   theme = base_theme))
 }, width = 2600, height = 1150)
 
 # ── console summary ─────────────────────────────────────────────────────────

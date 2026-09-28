@@ -62,6 +62,50 @@ dated_path <- function(dir_path, filename) {
   file.path(dir_path, with_date_prefix(filename))
 }
 
+# Write a table as a LaTeX booktabs tabular, for \input{} into slides or the
+# paper (needs \usepackage{booktabs}). Only the tabular is written -- no float,
+# caption or label -- so the same file works inside a Beamer frame and inside a
+# table environment; the caption belongs where the file is input.
+#
+# Cells are written as given, so format numbers BEFORE calling: rounding is then
+# a visible decision in the calling script. Body cells are escaped for LaTeX
+# (% & _ # $); column names and group labels are NOT, so they may carry math
+# such as "$\\tau$". NA prints as "--".
+#
+#   align  : column alignment, default "l" then "r" for every other column
+#   groups : optional panel structure, e.g. list("Targeted" = 2, "Untargeted" = 5):
+#            consecutive blocks of rows, each introduced by an italic header row
+#   notes  : optional one-line note under the bottom rule
+write_tex_table <- function(df, file, align = NULL, groups = NULL, notes = NULL) {
+  df  <- as.data.frame(df, stringsAsFactors = FALSE, check.names = FALSE)
+  nc  <- ncol(df)
+  esc <- function(x) {
+    x <- as.character(x)
+    x[is.na(x) | trimws(x) == "NA"] <- "--"   # formatC(NA) returns the string "NA"
+    gsub("([%&_#$])", "\\\\\\1", x)
+  }
+  row_tex <- function(v) paste0(paste(v, collapse = " & "), " \\\\")
+  if (is.null(align)) align <- c("l", rep("r", nc - 1))
+  body <- vapply(seq_len(nrow(df)), function(i) row_tex(esc(unlist(df[i, ]))), "")
+  if (!is.null(groups)) {
+    n <- unlist(groups)
+    if (sum(n) != nrow(df)) stop("groups must sum to the number of rows")
+    ends <- cumsum(n); starts <- c(1, head(ends, -1) + 1)
+    body <- unlist(lapply(seq_along(n), function(g) c(
+      if (g > 1) "\\addlinespace",
+      sprintf("\\multicolumn{%d}{l}{\\textit{%s}} \\\\", nc, names(n)[g]),
+      body[starts[g]:ends[g]])))
+  }
+  out <- c(sprintf("\\begin{tabular}{%s}", paste(align, collapse = "")),
+           "\\toprule", row_tex(names(df)), "\\midrule", body, "\\bottomrule",
+           if (!is.null(notes))
+             sprintf("\\multicolumn{%d}{l}{\\footnotesize %s} \\\\", nc, notes),
+           "\\end{tabular}")
+  writeLines(out, file)
+  message("wrote ", basename(file))
+  invisible(file)
+}
+
 # Zero-pad a county FIPS code to the canonical 5-character form.
 #
 # WHY THIS EXISTS: county FIPS codes carry meaningful leading zeros ("06037" =

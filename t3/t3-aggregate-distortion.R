@@ -98,3 +98,13 @@ cat(sprintf("    NET share of female hours lost %+.0f%%\n",
             100*(f24$pct_female_hours_lost/f80$pct_female_hours_lost - 1)))
 fwrite(out, dated_path(results_dir, "t3_aggregate_distortion.csv"))
 message("\nwrote t3_aggregate_distortion.csv")
+
+# LaTeX table (booktabs tabular, for \input{} into slides/paper).
+f3 <- function(x, d = 3) formatC(x, format = "f", digits = d, big.mark = ",")
+write_tex_table(out[, .(Year = YEAR,
+                        `\\% norm binds` = f3(pct_binding, 1),
+                        `\\% female hours lost` = f3(pct_female_hours_lost, 2),
+                        `Hours lost per bound hh.` = f3(lost_per_affected, 0),
+                        `FTE jobs lost (m)` = f3(fte_lost_millions, 2),
+                        `His hours gained (m)` = f3(hours_gain_total / 1e6, 0))],
+                dated_path(results_dir, "t3_aggregate_distortion_table.tex"))
