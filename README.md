@@ -1,6 +1,6 @@
 # School boards, culture, and women who work
 
-**WIP — last updated September 2026**
+**WIP — last updated October 2026**
 
 Economic analysis of culture and its effect on female labour force participation
 in the US, with a focus on intra-household bargaining under social norms.
@@ -46,7 +46,14 @@ school-boards/
 ├── t1/                       # BKP replication
 ├── t2/                       # culture × wealth quadrant
 ├── t3/                       # structural model
-└── archive/                  # superseded — kept for reference, not run
+├── archive/                  # superseded — kept for reference, not run
+│
+├── claude/                   # internal decision logs (see "Internal documentation")
+├── notes/                    # figure/table notes keyed to output paths; meeting notes; round 1–2 slides
+├── presentations/            # round-3 Beamer deck (Gotham theme) and assets
+├── bib/                      # literature summaries and .bib for the paper
+├── logs/                     # run-pipeline.sh logs (regenerated each run)
+└── FrontierCultureReplication/  # Bazzi et al. replication package, kept as reference input
 ```
 
 ### Running a script
@@ -185,6 +192,7 @@ margins — participation, and hours given participation.
 | `t2/t2-figures.R` | **All T2 tables and figures** |
 | `t2/t2-rdd-breadwinner-norm.R` | Donut RDD at the equal-earnings threshold |
 | `t2/t2-ols-regressions.R` | Descriptive OLS, county and household level |
+| `t2/t2-bunching.R` | Saez-style bunching at equal earnings (wife's share of earnings = 0.5), by husband's income quintile; recovers the data's wedge and tests whether it rises with income, next to T3's prediction. **Not in `run-pipeline.sh`** — run by hand after `t3-estimate-v2.R` (its section 5 reads the T3 estimates) |
 
 `t2-empirical-quadrant.R` writes an RDS cache to
 `data/interim/t2_quadrant.rds`, and `t2-figures.R` reads it from there. No
@@ -196,7 +204,7 @@ Rscript t2/t2-figures.R
 ```
 
 Override the location with `T2_CACHE_WRITE` (writer) and `T2_CACHE` (reader) if
-you want to keep several quadrant samples side by side.
+several quadrant samples need to be kept side by side.
 
 **Why housing is the wealth axis.** Home equity is the median household's
 dominant asset and is reported for ~70% of households, so it gives a wealth
@@ -218,6 +226,8 @@ conditions on the **husband's** labour-income decile, never the couple's.
 - `data/graphs/*_rdd_donut_*.png` — RDD density and kink plots
 - `data/processed/results/*_t2_main_table.tex` — the formatted main table
 - `data/processed/results/*_t2_{balance_table,quadrant_means,decile_coefficients}.csv`
+- `data/graphs/*_t2_bunching_{density_by_quintile,tau_by_quintile,tau_over_time}.png` — bunching estimates (every output is explained in `notes/t3-figures-and-tables.md`)
+- `data/processed/results/*_t2_bunching_{main_table,robustness_table}.tex`, `*_t2_bunching_{estimates,eta}.csv`
 - `data/processed/results/rdd_donut_breadwinner_norm_results.csv`
 - `data/processed/results/ols_{county_female_lfpr,hh_hours}_results.csv`
 
@@ -282,11 +292,23 @@ Run order: `t3-estimate-v2.R` → `t3-compute-tau.R` → `t3-aggregate-distortio
 T3_YEARS=1980,1990,2000,2010,2020,2024 Rscript t3/t3-estimate-v2.R
 ```
 
-**Identification.** Two free parameters against five moments, so the fit is
-testable. α is pinned by the cliff ratio, f by the corner share, and the corner
-share by the husband's wage quintile tests F's functional form. Two moments —
-the wife's share of couple hours, and the share of couples where she out-earns —
-are **held back entirely** and are the model's out-of-sample test.
+**Identification.** Two parameters, two targeted moments — exactly identified.
+α is pinned by the cliff ratio and f (the fixed cost of a second earner, as a
+share of median household income) by the overall corner share. Because the
+model is exactly identified the fit on those two moments is by construction and
+is not evidence. Everything else is an **untargeted test**: the wife's share of
+couple hours, the share of couples where she out-earns, the corner share in
+husband-wage quintiles Q1/Q3/Q5, and the cliff ratio, over-hours and hours share
+by quintile. An earlier five-moment version targeted the quintile corner shares
+and failed its over-identification test; those moments were moved to the
+untargeted set.
+
+**Known limitation — income elasticity of the norm.** Under log utility the
+wedge is τ = α·C, so the model *imposes* a unit income elasticity. The bunching
+test in `t2/t2-bunching.R` finds the data wedge small and roughly flat across
+husband-income quintiles, while the model's rises steeply. Do not read the T3
+fit as evidence that the norm is income-elastic. `y0` in the model is capital
+income only, so wealth and income effects are kept separate.
 
 **Key outputs**
 
@@ -338,7 +360,7 @@ live producer are moved to `data/processed/results/archive/`.
 ### Configuration
 
 - Paths resolve through `R/paths.R`, driven by `config.yml`.
-- Set `external_data_root` in `config.yml` to your Dropbox project root.
+- Set `external_data_root` in `config.yml` to the root of the external data directory (a Dropbox folder in the authors' setup).
 - Override at runtime with `SCHOOL_BOARDS_DATA_ROOT` or
   `SCHOOL_BOARDS_EXTERNAL_ROOT`.
 - API keys live in `.Renviron` (gitignored): `IPUMS_API_KEY`, `CENSUS_API_KEY`,
@@ -398,8 +420,11 @@ state fixed effects and county clustering.
 
 ## Internal documentation
 
-Decisions logs, not reviewer-facing:
-`claude/bkp-replication-v2-changes.md`, `claude/future-extensions.md`.
+Decision logs, not reviewer-facing:
+`claude/bkp-replication-v2-changes.md`, `claude/future-extensions.md`,
+`claude/t3-model-handoff.md` (model spec, code state, next steps), and
+`notes/t3-figures-and-tables.md` (what every T3 and bunching output shows and
+how to read it).
 
 ## Data and reference sources
 
