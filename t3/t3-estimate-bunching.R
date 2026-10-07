@@ -72,6 +72,18 @@ maxit    <- as.integer(Sys.getenv("T3B_MAXIT", "120"))
 theta_in <- Sys.getenv("T3B_THETA", "1")
 fit_theta <- identical(theta_in, "fit"); theta_fix <- if (fit_theta) 1 else as.numeric(theta_in)
 sigF     <- as.numeric(Sys.getenv("T3B_SIGMAF", "0"))
+#   T3B_EPS    Frisch elasticity of hours (default 1 = the original solver).
+#              Values other than 1 use t3-model-solver-eps.R, validated against
+#              the original at eps = 1 and against brute force at eps = 0.5.
+eps_in   <- as.numeric(Sys.getenv("T3B_EPS", "1"))
+if (eps_in != 1) source(here::here("t3", "t3-model-solver-eps.R"))
+solve_any <- function(w_m, w_f, y0, Fv, a, k_m, k_f, g) {
+  if (eps_in == 1) {
+    solve_household(w_m, w_f, y0, Fv, a, k_m, k_f, 0, 0, gamma = g)
+  } else {
+    solve_household_eps(w_m, w_f, y0, Fv, a, k_m, k_f, 0, gamma = g, eps = eps_in)
+  }
+}
 set.seed(20261006)
 
 # ── Saez (2010) band estimator, identical to t2/t2-bunching.R ────────────────
@@ -196,7 +208,7 @@ for (g in gammas) {
     t0 <- Sys.time()
     # kappa from his first-order condition at dual-earner means:
     #   kappa * h_m = w_m * C^(-gamma)   (reduces to v2's formula at gamma = 1)
-    kap <- weighted.mean(p$int$m_w, p$int$HHWT) * p$Cbar^(-g) / weighted.mean(p$int$m_h, p$int$HHWT)
+    kap <- weighted.mean(p$int$m_w, p$int$HHWT) * p$Cbar^(-g) / weighted.mean(p$int$m_h, p$int$HHWT)^(1 / eps_in)
     dS  <- p$dS; kS <- rep(kap, nrow(dS))
     set.seed(20261006L + p$yr); eps <- rnorm(nrow(dS))
     target <- c(tau_bar = mean(p$data_tau), corner = p$corner)
@@ -208,8 +220,8 @@ for (g in gammas) {
     }
     sim <- function(par, alpha_on = TRUE) {
       q <- pars(par)
-      s <- solve_household(dS$m_w, dS$f_w, dS$y0, q$Fv, if (alpha_on) q$a else 0,
-                           kS, q$th * kS, 0, 0, gamma = g)
+      s <- solve_any(dS$m_w, dS$f_w, dS$y0, q$Fv, if (alpha_on) q$a else 0,
+                     kS, q$th * kS, g)
       list(s = s, m = sim_moments(s, dS, p$ymed))
     }
     loss <- function(par) {
@@ -226,7 +238,7 @@ for (g in gammas) {
     m0 <- sim(fit$par, alpha_on = FALSE)$m
     bind <- r$s$regime %in% c(2L, 3L)
     tau_bind <- if (any(bind)) a * weighted.mean(r$s$C[bind]^g, dS$HHWT[bind]) else NA_real_
-    row <- data.table(gamma = g, theta = q$th, sigmaF = sigF, YEAR = p$yr, kappa = kap, alpha = a, f = f,
+    row <- data.table(gamma = g, eps = eps_in, theta = q$th, sigmaF = sigF, YEAR = p$yr, kappa = kap, alpha = a, f = f,
                       F_dollars = f * p$ymed, loss = fit$value, converged = fit$convergence == 0,
                       tau_binding = tau_bind, pct_bound = 100 * weighted.mean(bind, dS$HHWT),
                       secs = as.numeric(difftime(Sys.time(), t0, units = "secs")))
