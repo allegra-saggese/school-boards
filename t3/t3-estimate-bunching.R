@@ -75,6 +75,11 @@ sigF     <- as.numeric(Sys.getenv("T3B_SIGMAF", "0"))
 #   T3B_EPS    Frisch elasticity of hours (default 1 = the original solver).
 #              Values other than 1 use t3-model-solver-eps.R, validated against
 #              the original at eps = 1 and against brute force at eps = 0.5.
+#   T3B_TARGET "bunching" (default: targets the Saez wedge and the corner share) or
+#              "cliff" (targets the cliff ratio and the corner share, as in
+#              t3-estimate-v2.R) so the two calibrations can be compared at the
+#              same elasticity.
+target_mode <- Sys.getenv("T3B_TARGET", "bunching")
 eps_in   <- as.numeric(Sys.getenv("T3B_EPS", "1"))
 if (eps_in != 1) source(here::here("t3", "t3-model-solver-eps.R"))
 solve_any <- function(w_m, w_f, y0, Fv, a, k_m, k_f, g) {
@@ -212,6 +217,8 @@ for (g in gammas) {
     dS  <- p$dS; kS <- rep(kap, nrow(dS))
     set.seed(20261006L + p$yr); eps <- rnorm(nrow(dS))
     target <- c(tau_bar = mean(p$data_tau), corner = p$corner)
+    if (target_mode == "cliff")      # the earlier calibration: cliff ratio instead of the bunching wedge
+      target <- c(cliff = unname(dmom[[as.character(p$yr)]]["cliff"]), corner = p$corner)
     if (fit_theta) target <- c(target, hshare = unname(dmom[[as.character(p$yr)]]["hshare"]))
     pars <- function(par) {
       f <- plogis(par[2]) * 0.5
@@ -229,7 +236,7 @@ for (g in gammas) {
       if (any(!is.finite(m))) return(1e6)
       sum(((m - target) / pmax(abs(target), 1e-6))^2)
     }
-    st0 <- c(log(0.03 / p$Cbar^g), qlogis(0.10 / 0.5), if (fit_theta) log(1.5))
+    st0 <- c(log(if (target_mode == "cliff") 0.15 else 0.03) - g * log(p$Cbar), qlogis(0.10 / 0.5), if (fit_theta) log(1.5))
     fit <- optim(st0, loss, method = "Nelder-Mead",
                  control = list(maxit = maxit, reltol = 1e-8))
     q <- pars(fit$par); a <- q$a; f <- q$f
