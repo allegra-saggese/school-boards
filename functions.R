@@ -76,7 +76,10 @@ dated_path <- function(dir_path, filename) {
 #   groups : optional panel structure, e.g. list("Targeted" = 2, "Untargeted" = 5):
 #            consecutive blocks of rows, each introduced by an italic header row
 #   notes  : optional one-line note under the bottom rule
-write_tex_table <- function(df, file, align = NULL, groups = NULL, notes = NULL) {
+#   raw_cols : names of columns whose cells are already LaTeX (e.g. a row label
+#            "$\\eta$") and must not be escaped
+write_tex_table <- function(df, file, align = NULL, groups = NULL, notes = NULL,
+                            raw_cols = NULL) {
   df  <- as.data.frame(df, stringsAsFactors = FALSE, check.names = FALSE)
   nc  <- ncol(df)
   esc <- function(x) {
@@ -86,7 +89,10 @@ write_tex_table <- function(df, file, align = NULL, groups = NULL, notes = NULL)
   }
   row_tex <- function(v) paste0(paste(v, collapse = " & "), " \\\\")
   if (is.null(align)) align <- c("l", rep("r", nc - 1))
-  body <- vapply(seq_len(nrow(df)), function(i) row_tex(esc(unlist(df[i, ]))), "")
+  raw  <- names(df) %in% raw_cols
+  body <- vapply(seq_len(nrow(df)), function(i) {
+    v <- unlist(df[i, ]); v[!raw] <- esc(v[!raw]); row_tex(v)
+  }, "")
   if (!is.null(groups)) {
     n <- unlist(groups)
     if (sum(n) != nrow(df)) stop("groups must sum to the number of rows")

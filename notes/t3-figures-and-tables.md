@@ -241,3 +241,112 @@ Numbers are rounded in the script that writes the table (`write_tex_table()` in
   gives up about 2× the hours.
 - *Comparative statics (2019).* +10% alpha moves the corner share by +0.01% and
   the cliff by +2.85%, so alpha is an hours parameter.
+
+---
+
+## Bunching at equal earnings, by husband's income (`t2/t2-bunching.R`)
+
+**Run documented:** 2026-10-05 (files prefixed `2026-10-05_`). Empirical (T2),
+but built to test T3's income elasticity: it measures the norm's wedge group by
+group without the model, then runs the same estimator on T3-simulated couples.
+
+**Design in brief.**
+- *Sample:* dual earners, wife's share of couple labour earnings
+  z ∈ [0.25, 0.75], 7.64M couples over 27 years.
+- *Groups:* quintiles of the **husband's labour income** within year. Not
+  household income, which the wife's own response would move.
+- *Main estimator:* Saez (2010) band estimator, ±0.02 around 0.5. The
+  counterfactual density is the mean of the adjacent bands [0.46, 0.48) and
+  (0.52, 0.54]. Normalised excess mass b = 0.01 × B / h(0.5).
+- *Wedge:* in T3 a couple bunches iff its no-norm share lies in
+  [0.5, (1+τ)/2], so **τ̂ = 2b**.
+- *Inference:* 200-replication Poisson bootstrap over couples.
+- *Elasticity:* η = slope of log τ̂ on log group resources (labour + capital
+  income) with year fixed effects, over the 135 year × quintile cells.
+
+**Rounding, the key data issue.** Reported earnings sit on a coarse grid: since
+2000, 99% are multiples of $100 and 84–93% of $1,000. So spouses tie exactly far
+more often than a smooth density implies. 5.45% of dual earners report identical
+earnings, and the most common ties are $50k/$50k, $40k/$40k and $60k/$60k. Ties
+are *not* coworking spouses: self-employment is less common among tied couples
+(13.6%) than among all dual earners (17.9%). Three versions are reported:
+
+- *All:* unadjusted. An upper bound.
+- *Rounding-adjusted (preferred):* subtracts placebo ties. Each wife is
+  re-paired with a random husband earning within ±10% of her own husband (same
+  year). The placebo tie rate is 2.72% against 5.45% actual, so half the ties are
+  what rounding alone produces. The remaining excess ties may still be reporting
+  rather than behaviour (one respondent reporting the same figure for both
+  spouses), so this too is an upper bound on the behavioural wedge.
+- *Excl. exact ties:* drops every tie, including genuine ones. A lower bound.
+
+### `graphs/2026-10-05_t2_bunching_density_by_quintile.png`
+
+**Shows.** The distribution of the wife's earnings share, ACS 2001–2024 pooled,
+one panel per husband's-income quintile. Black: observed % of couples per 0.01
+bin. Red dashed: Chetty et al. (2011) counterfactual (degree-7 polynomial, band
+excluded, simple-fraction heaping bins dummied out). Grey: the ±0.02 band.
+
+**How to read.** The bunching is a **one-bin spike at exactly 0.50**, in every
+quintile. Just above 0.5 the observed density tracks the counterfactual: there
+is no hole of wives stopping just short of their husbands. The other spikes
+(1/3, 3/8, 2/5, ...) are the same rounding at other simple ratios. The density's
+slope through 0.5 steepens with the husband's income (rising in Q1, steeply
+falling in Q5). That is why the cliff *ratio* used in T3 rises with income
+without any change in the norm.
+
+### `graphs/2026-10-05_t2_bunching_tau_by_quintile.png`
+
+**Shows.** τ̂ by husband's-income quintile, ACS pooled, with 95% bootstrap CIs
+(very narrow). Data in three versions (all / rounding-adjusted / excluding
+ties). Model in two: the same estimator on T3-simulated couples, and the
+model's own true wedge α·C averaged over its bunchers.
+
+**Key numbers.**
+
+| Quintile | Data, all | Data, rounding-adj. | Data, excl. ties | Model, same estimator | Model, true τ |
+|---|---|---|---|---|---|
+| Q1 | 0.066 | 0.043 | −0.009 | 0.128 | 0.138 |
+| Q2 | 0.035 | 0.023 | −0.009 | 0.157 | 0.148 |
+| Q3 | 0.036 | 0.026 | −0.004 | 0.220 | 0.205 |
+| Q4 | 0.033 | 0.024 | −0.005 | 0.297 | 0.291 |
+| Q5 | 0.057 | 0.044 | −0.004 | 0.387 | 0.452 |
+
+Bootstrap SEs are about 0.001 throughout.
+
+- **The estimator works.** On simulated couples it recovers the model's true
+  wedge to within 7% (Q1) and 14% (Q5; biased down by the steep density there).
+  So τ̂ = 2b is a sound mapping.
+- **The data's wedge is small:** 0.02–0.04 rounding-adjusted, and zero once all
+  ties are dropped. The model's is 0.13–0.45, 3–10× the data's most generous
+  reading.
+- **No income gradient in the data.** τ̂ is flat or U-shaped across quintiles.
+  η = **0.10** (SE 0.02) rounding-adjusted, −0.01 (0.01) unadjusted. The model
+  on the same statistic gives 0.69 (it imposes 1).
+
+### `graphs/2026-10-05_t2_bunching_tau_over_time.png`
+
+**Shows.** Rounding-adjusted τ̂ by year for quintiles Q1, Q3, Q5, with 95%
+bootstrap bands. Hollow points are decennial years.
+
+**Key numbers.** Mostly 0.02–0.05 throughout 1980–2024, with no upward or
+downward trend and no quintile consistently on top.
+- Q5 is highest in 1980–1990 (0.066–0.069) and converges to the others by 2000.
+- Q3 is the lowest series in almost every year.
+- The 2004 Q5 point (0.095) is an outlier with a wide band. The 2001–2004 ACS
+  samples are about a third the size of later years, so treat single early-ACS
+  years with caution.
+
+### Tables (`processed/results/`)
+
+| File | Contents |
+|---|---|
+| `2026-10-05_t2_bunching_main_table.tex` | τ̂ by quintile, ACS pooled: data (all, rounding-adjusted, excl. ties, with SEs); model (same estimator; true τ) |
+| `2026-10-05_t2_bunching_robustness_table.tex` | τ̂ by quintile and η across specifications: all, rounding-adj., excl. ties, excl. self-employed, grouped by husband's wage, polynomial counterfactual, model |
+| `2026-10-05_t2_bunching_estimates.csv` | Every cell: spec × estimator × year (0 = pooled) × quintile; B, h, b, τ̂, SE, model true τ |
+| `2026-10-05_t2_bunching_eta.csv` | η by spec and estimator, with bootstrap SE and number of cells used |
+
+**Robustness.** Excluding self-employed couples and grouping by the husband's
+wage instead of his income change nothing material: η = 0.00 and −0.05 (Saez).
+The polynomial counterfactual gives η = 0.14. Every data specification puts η
+between −0.05 and 0.16, against 0.69 for the model.

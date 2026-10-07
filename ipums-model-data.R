@@ -111,6 +111,13 @@ pull_year <- function(yr) {
   d[, ann_hours  := fifelse(!is.na(weeks) & UHRSWORK %between% c(1, 99),
                             UHRSWORK * weeks, 0)]
   d[, lab_inc    := labor_income(INCWAGE, INCBUS, INCFARM, INCBUS00)]
+  # Any self-employment income (business or farm, same era splice as
+  # labor_income). Flags couples who may run a business together and report
+  # an equal split: they produce a spike at exactly equal earnings that is
+  # not a labour-supply response (Zinovyeva and Tverdostup 2021). Used to
+  # exclude them in t2/t2-bunching.R.
+  d[, se_any     := fifelse(!is.na(nas(INCBUS00)), nas(INCBUS00) != 0,
+                            rowSums(cbind(nas(INCBUS), nas(INCFARM)), na.rm = TRUE) != 0)]
   # y0 components: income that does not respond to hours. CAPITAL INCOME ONLY
   # (interest, dividends, net rent). Transfers are excluded because they are
   # conditional on NOT working and so are endogenous to the choice the model
@@ -143,10 +150,10 @@ w <- allp[SEX == 2]; h <- allp[SEX == 1]
 wf <- w[, .(YEAR, SERIAL, HHWT, STATEICP, COUNTYICP, HHINCOME, nchild = NCHILD,
             f_pn = PERNUM, f_sp = SPLOC, f_age = AGE, f_race = RACE, f_hisp = HISPAN,
             f_educ = EDUC, f_emp = EMPSTAT, f_h = ann_hours, f_lab = lab_inc,
-            f_nonlab = nonlab_inc, f_wks_imp = weeks_imp)]
+            f_nonlab = nonlab_inc, f_wks_imp = weeks_imp, f_se = se_any)]
 hs <- h[, .(YEAR, SERIAL, m_pn = PERNUM, m_sp = SPLOC, m_age = AGE, m_race = RACE,
             m_hisp = HISPAN, m_educ = EDUC, m_emp = EMPSTAT, m_h = ann_hours,
-            m_lab = lab_inc, m_nonlab = nonlab_inc)]
+            m_lab = lab_inc, m_nonlab = nonlab_inc, m_se = se_any)]
 pairs <- merge(wf, hs, by = c("YEAR", "SERIAL"), allow.cartesian = TRUE)
 pairs <- pairs[f_sp == m_pn & m_sp == f_pn]          # mutual spouse link
 message("  linked couples: ", format(nrow(pairs), big.mark = ","))
@@ -304,7 +311,7 @@ pairs[, regime := fcase(f_h == 0, "corner (h_f = 0)",
 
 out <- pairs[, .(YEAR, SERIAL, HHWT, STATEICP, COUNTYICP, nchild,
                  f_age, m_age, f_e5, m_e5, f_r3, m_r3, f_emp, m_emp,
-                 f_h, m_h, f_lab, m_lab, f_w, m_w, f_w_obs, m_w_obs,
+                 f_h, m_h, f_lab, m_lab, f_se, m_se, f_w, m_w, f_w_obs, m_w_obs,
                  f_w_predicted, m_w_predicted, f_wks_imp,
                  y0, y, z_W, regime)]
 fwrite(out, out_file, append = !first_year)
