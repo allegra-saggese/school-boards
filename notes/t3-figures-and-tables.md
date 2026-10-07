@@ -4,7 +4,7 @@ Companion to the T3 figures and LaTeX tables. The figures carry only a title,
 axis labels and a legend; everything needed to read them is here, keyed to the
 output file. Update this file whenever a figure or table changes.
 
-**Run documented:** 2026-09-28 (files prefixed `2026-09-28_`).
+**Run documented:** 2026-09-28 (tables prefixed `2026-09-28_`). Figures were re-styled and regenerated 2026-10-06 (prefixed `2026-10-06_`) from the same results; no numbers changed.
 **Data root:** `~/Dropbox/mf-as-shared-ideas/tradwives/data/` (paths below are
 relative to it). Figures are in `graphs/`, tables in `processed/results/`.
 **Pipeline:** `ipums-bkp-build-database.R` (branch `rebuild-wks-supp`) →
@@ -39,7 +39,7 @@ relative to it). Figures are in `graphs/`, tables in `processed/results/`.
 
 ## Figures
 
-### 1. `graphs/2026-09-28_t3_tau_over_time.png` (+ `.pdf`)
+### 1. `graphs/2026-10-06_t3_tau_over_time.png` (+ `.pdf`)
 
 **Shows.** The norm wedge tau by year, 1980–2024, two series:
 *all households* (alpha × mean model consumption) and *households the norm binds
@@ -60,7 +60,7 @@ income growth. The decline is not steady: plateaus around 0.21–0.24 (2001–20
 and 0.18–0.21 (2009–2021), with the step between them in 2009–2010. 2023 (0.208) is out of line with 2022 (0.172) and 2024
 (0.166); treat single recent years with caution.
 
-### 2. `graphs/2026-09-28_t3_model_vs_data_over_time.png`
+### 2. `graphs/2026-10-06_t3_model_vs_data_over_time.png`
 
 **Shows.** Four moments by year, data (black) vs model (red dashed). Top row
 *targeted*: cliff ratio, corner share. Bottom row *untargeted*: wife's share of
@@ -81,7 +81,7 @@ overpredicts wives out-earning husbands by 7 points, and with it the error is 1
 point. The hours share is **not** evidence: the no-norm baseline fits it
 slightly better. The model underpredicts the hours share in every year.
 
-### 3. `graphs/2026-09-28_t3_intensity_vs_exposure.png`
+### 3. `graphs/2026-10-06_t3_intensity_vs_exposure.png`
 
 **Shows.** Three indices, 1980 = 100: *intensity* (hours of the wife's work lost
 per norm-bound household), *exposure* (share of couples the norm binds on), and
@@ -101,7 +101,7 @@ until ~2008 and falling after. Net share of female hours lost 5.96% → 5.85%
 partly mechanical: as wives' wages approach husbands', more couples land where
 "he should out-earn her" is a live constraint.
 
-### 4. `graphs/2026-09-28_t3_aggregate_distortion.png`
+### 4. `graphs/2026-10-06_t3_aggregate_distortion.png`
 
 **Shows.** Two panels by year: share of female market hours lost to the norm
 (%), and full-time-equivalent jobs lost (millions, at 2,000 hours per FTE).
@@ -123,7 +123,7 @@ work at alpha-hat. But the norm moves 1.8–3.5% of couples' **husbands into
 work** (see the model checks table): she-only couples pay the norm on her whole
 income, so a husband who would not work at alpha = 0 enters.
 
-### 5. `graphs/2026-09-28_t3_corner_gradient_limitation.png`
+### 5. `graphs/2026-10-06_t3_corner_gradient_limitation.png`
 
 **Shows.** Share of wives not working by year, in husband's-wage quintiles Q1,
 Q3 and Q5, data vs model. **Untargeted**: only the aggregate corner share is
@@ -140,10 +140,10 @@ Q1/Q3/Q5, so the norm plays no part in this failure. Explanations already tested
 and rejected: wage selection, and preference heterogeneity
 (`t3-estimate-v3.R`).
 
-### 6. `graphs/2026-09-28_t3_hours_earnings_wife_vs_husband.png`
+### 6. `graphs/2026-10-06_t3_hours_earnings_wife_vs_husband.png`
 
 **Shows.** Wife vs husband by year, three panels: mean annual market hours; mean
-annual labour earnings (2024 dollars); median hourly wage (2024 dollars).
+annual labor earnings (2024 dollars); median hourly wage (2024 dollars).
 
 **How it is computed.** Directly from `model_input_households.csv`, no model.
 Hours and earnings are means over all couples, zeros included. Wages are medians
@@ -160,7 +160,7 @@ sample is 25–64. It also quoted an 18.5% "had his wages kept pace"
 counterfactual that no current script computes. That claim is dropped until
 it is reproduced.)*
 
-### 7. `graphs/2026-09-28_t3_untargeted_by_quintile.png`
+### 7. `graphs/2026-10-06_t3_untargeted_by_quintile.png`
 
 **Shows.** Group (C) of the moment report: three intensive-margin tests across
 the husband's-wage quintile, each as data (black), model (red dashed) and
@@ -246,22 +246,22 @@ Numbers are rounded in the script that writes the table (`write_tex_table()` in
 
 ## Bunching at equal earnings, by husband's income (`t2/t2-bunching.R`)
 
-**Run documented:** 2026-10-05 (files prefixed `2026-10-05_`). Empirical (T2),
+**Run documented:** 2026-10-05; outputs regenerated 2026-10-06 (files prefixed `2026-10-06_`) with identical estimates. Empirical (T2),
 but built to test T3's income elasticity: it measures the norm's wedge group by
 group without the model, then runs the same estimator on T3-simulated couples.
 
 **Design in brief.**
-- *Sample:* dual earners, wife's share of couple labour earnings
+- *Sample:* dual earners, wife's share of couple labor earnings
   z ∈ [0.25, 0.75], 7.64M couples over 27 years.
-- *Groups:* quintiles of the **husband's labour income** within year. Not
+- *Groups:* quintiles of the **husband's labor income** within year. Not
   household income, which the wife's own response would move.
 - *Main estimator:* Saez (2010) band estimator, ±0.02 around 0.5. The
   counterfactual density is the mean of the adjacent bands [0.46, 0.48) and
-  (0.52, 0.54]. Normalised excess mass b = 0.01 × B / h(0.5).
+  (0.52, 0.54]. Normalized excess mass b = 0.01 × B / h(0.5).
 - *Wedge:* in T3 a couple bunches iff its no-norm share lies in
   [0.5, (1+τ)/2], so **τ̂ = 2b**.
 - *Inference:* 200-replication Poisson bootstrap over couples.
-- *Elasticity:* η = slope of log τ̂ on log group resources (labour + capital
+- *Elasticity:* η = slope of log τ̂ on log group resources (labor + capital
   income) with year fixed effects, over the 135 year × quintile cells.
 
 **Rounding, the key data issue.** Reported earnings sit on a coarse grid: since
@@ -280,7 +280,7 @@ are *not* coworking spouses: self-employment is less common among tied couples
   spouses), so this too is an upper bound on the behavioural wedge.
 - *Excl. exact ties:* drops every tie, including genuine ones. A lower bound.
 
-### `graphs/2026-10-05_t2_bunching_density_by_quintile.png`
+### `graphs/2026-10-06_t2_bunching_density_by_quintile.png`
 
 **Shows.** The distribution of the wife's earnings share, ACS 2001–2024 pooled,
 one panel per husband's-income quintile. Black: observed % of couples per 0.01
@@ -295,7 +295,7 @@ slope through 0.5 steepens with the husband's income (rising in Q1, steeply
 falling in Q5). That is why the cliff *ratio* used in T3 rises with income
 without any change in the norm.
 
-### `graphs/2026-10-05_t2_bunching_tau_by_quintile.png`
+### `graphs/2026-10-06_t2_bunching_tau_by_quintile.png`
 
 **Shows.** τ̂ by husband's-income quintile, ACS pooled, with 95% bootstrap CIs
 (very narrow). Data in three versions (all / rounding-adjusted / excluding
@@ -324,7 +324,7 @@ Bootstrap SEs are about 0.001 throughout.
   η = **0.10** (SE 0.02) rounding-adjusted, −0.01 (0.01) unadjusted. The model
   on the same statistic gives 0.69 (it imposes 1).
 
-### `graphs/2026-10-05_t2_bunching_tau_over_time.png`
+### `graphs/2026-10-06_t2_bunching_tau_over_time.png`
 
 **Shows.** Rounding-adjusted τ̂ by year for quintiles Q1, Q3, Q5, with 95%
 bootstrap bands. Hollow points are decennial years.
@@ -341,10 +341,10 @@ downward trend and no quintile consistently on top.
 
 | File | Contents |
 |---|---|
-| `2026-10-05_t2_bunching_main_table.tex` | τ̂ by quintile, ACS pooled: data (all, rounding-adjusted, excl. ties, with SEs); model (same estimator; true τ) |
-| `2026-10-05_t2_bunching_robustness_table.tex` | τ̂ by quintile and η across specifications: all, rounding-adj., excl. ties, excl. self-employed, grouped by husband's wage, polynomial counterfactual, model |
-| `2026-10-05_t2_bunching_estimates.csv` | Every cell: spec × estimator × year (0 = pooled) × quintile; B, h, b, τ̂, SE, model true τ |
-| `2026-10-05_t2_bunching_eta.csv` | η by spec and estimator, with bootstrap SE and number of cells used |
+| `2026-10-06_t2_bunching_main_table.tex` | τ̂ by quintile, ACS pooled: data (all, rounding-adjusted, excl. ties, with SEs); model (same estimator; true τ) |
+| `2026-10-06_t2_bunching_robustness_table.tex` | τ̂ by quintile and η across specifications: all, rounding-adj., excl. ties, excl. self-employed, grouped by husband's wage, polynomial counterfactual, model |
+| `2026-10-06_t2_bunching_estimates.csv` | Every cell: spec × estimator × year (0 = pooled) × quintile; B, h, b, τ̂, SE, model true τ |
+| `2026-10-06_t2_bunching_eta.csv` | η by spec and estimator, with bootstrap SE and number of cells used |
 
 **Robustness.** Excluding self-employed couples and grouping by the husband's
 wage instead of his income change nothing material: η = 0.00 and −0.05 (Saez).

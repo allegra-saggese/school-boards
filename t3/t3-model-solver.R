@@ -128,6 +128,7 @@ solve_household <- function(w_m, w_f, y0, F, alpha, k_m, k_f, h_min = 0, alpha2 
   n  <- length(w_m)
   alpha  <- rep_len(alpha,  n)
   alpha2 <- rep_len(alpha2, n)
+  F      <- rep_len(F, n)     # F may be a scalar or one value per household
   A  <- w_m^2 / k_m
   B  <- w_f^2 / k_f
   Y  <- y0 - 2 * F
@@ -229,7 +230,7 @@ solve_household <- function(w_m, w_f, y0, F, alpha, k_m, k_f, h_min = 0, alpha2 
     ok <- !is.na(cand_h_m[, j]) & !is.na(cand_h_f[, j])
     if (any(ok)) {
       U[ok, j] <- utility(cand_h_m[ok, j], cand_h_f[ok, j],
-                          w_m[ok], w_f[ok], y0[ok], F, alpha[ok],
+                          w_m[ok], w_f[ok], y0[ok], F[ok], alpha[ok],
                           k_m[ok], k_f[ok], alpha2[ok], gamma)
     }
   }

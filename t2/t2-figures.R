@@ -87,7 +87,7 @@ cat("\n=== 2. MAIN COEFFICIENT TABLE ===\n")
 # thing that actually varies -- the wealth measure and the fixed effects -- is
 # invisible. Both are fixed here.
 dict <- c(
-  f_lfp                       = "Wife in labour force",
+  f_lfp                       = "Wife in labor force",
   f_hours                     = "Wife's weekly hours",
   conservative                = "Republican-majority county",
   wealthy                     = "Wealthy: top-quartile home value",
@@ -133,7 +133,7 @@ show_tab <- function() {
                            "  (husband age)"      = rep("Yes", 6),
                            "  (both college)"     = rep("Yes", 6),
                            "  (children, children^2)" = rep("Yes", 6),
-                           "  (ln husband labour income)" = rep("Yes", 6)),
+                           "  (ln husband labor income)" = rep("Yes", 6)),
          digits = 4, digits.stats = 3, depvar = FALSE)
 }
 show_tab()
@@ -156,7 +156,7 @@ etable(f_lfp1, f_lfp2, f_hrs, f_out, f_ast, f_bad, tex = TRUE, dict = dict,
                          "  (husband age)"      = rep("Yes", 6),
                          "  (both college)"     = rep("Yes", 6),
                          "  (children, children^2)" = rep("Yes", 6),
-                         "  (ln husband labour income)" = rep("Yes", 6)),
+                         "  (ln husband labor income)" = rep("Yes", 6)),
        file = dated_path(results_dir, "t2_main_table.tex"), replace = TRUE)
 
 # ── 3. COEFFICIENT PLOT ACROSS WEALTH PROXIES ───────────────────────────────
@@ -176,7 +176,8 @@ save_plot("t2_interaction_across_specs.png", {
     geom_vline(xintercept=0, colour="grey40") +
     geom_errorbarh(aes(xmin=100*lo, xmax=100*hi), height=0.16, colour="#08519C") +
     geom_point(size=3, colour="#08519C") +
-    labs(x="Culture x wealth interaction, effect on wife's LFP (pp)", y=NULL) +
+    labs(title="Culture x wealth interaction across wealth measures",
+         x="Culture x wealth interaction, effect on wife's LFP (pp)", y=NULL) +
     theme_minimal(base_size=13) +
     theme(panel.grid.minor=element_blank(), axis.text.y=element_text(size=11)))
 }, width=2000, height=900)
@@ -203,9 +204,8 @@ save_plot("t2_interaction_by_year.png", {
     geom_ribbon(aes(ymin=100*lo, ymax=100*hi), fill="#4292C6", alpha=0.22) +
     geom_line(colour="#08519C", linewidth=0.9) + geom_point(size=2.2, colour="#08519C") +
     scale_x_continuous(breaks=2012:2020) +
-    annotate("text", x=2019.4, y=100*pooled+0.55, label="pooled estimate",
-             colour="#B2182B", size=3.4) +
-    labs(x=NULL, y="Culture x wealth interaction on wife's LFP (pp)") +
+    labs(title="Culture x wealth interaction by year",
+         x="Year", y="Culture x wealth interaction on wife's LFP (pp)") +
     theme_minimal(base_size=13) + theme(panel.grid.minor=element_blank()))
 }, width=2000, height=1000)
 
@@ -222,9 +222,9 @@ tt[, tier := factor(tier, levels=c("Renter","Owner,\nmortgaged","Owner\noutright
 save_plot("t2_housing_tier_ladder.png", {
   print(ggplot(tt[!is.na(tier)], aes(tier, lfp)) +
     geom_col(fill="#08519C", width=0.62) +
-    geom_text(aes(label=sprintf("%.1f%%", lfp)), vjust=-0.5, size=4) +
     coord_cartesian(ylim=c(55,80)) +
-    labs(x=NULL, y="Wife in labour force (%)") +
+    labs(title="Wife's labor force participation by housing tier",
+         x="Housing tier", y="Wife in labor force (%)") +
     theme_minimal(base_size=13) +
     theme(panel.grid.major.x=element_blank(), panel.grid.minor=element_blank()))
 }, width=1900, height=950)
@@ -235,7 +235,7 @@ message("\nwrote 4 figures + balance/main/by-year tables")
 # One panel per specification, showing all three coefficients of interest with
 # 95% CIs. Named by the OUTCOME rather than by column number, so the figure
 # stands alone without the table beside it.
-coefplot_spec <- function(model, outcome_label, unit_label, file, note) {
+coefplot_spec <- function(model, outcome_label, unit_label, file) {
   ct <- as.data.table(coeftable(model), keep.rownames = "term")
   setnames(ct, c("term","est","se","t","p"))
   lab <- c(conservative                 = "Republican-majority county",
@@ -251,17 +251,9 @@ coefplot_spec <- function(model, outcome_label, unit_label, file, note) {
       geom_errorbarh(aes(xmin = lo, xmax = hi), height = 0.13,
                      colour = "#08519C", linewidth = 0.7) +
       geom_point(size = 3.1, colour = "#08519C") +
-      geom_text(aes(label = sprintf("%+.3f", est)), vjust = -1.25, size = 3.6,
-                colour = "grey25") +
-      labs(title = outcome_label,
-           subtitle = paste0("Married couples, both 18-65, 2012-2020. Controls: both ages, both education,\n",
-                             "children, husband's labour income. State, year and husband-income-decile fixed effects.\n",
-                             "95% confidence intervals; standard errors clustered on county."),
-           x = unit_label, y = NULL, caption = note) +
+      labs(title = outcome_label, x = unit_label, y = NULL) +
       theme_minimal(base_size = 13) +
       theme(plot.title = element_text(face = "bold", size = 15),
-            plot.subtitle = element_text(colour = "grey30", size = 10.5),
-            plot.caption = element_text(colour = "grey45", size = 9, hjust = 0),
             panel.grid.minor = element_blank(),
             panel.grid.major.y = element_blank(),
             axis.text.y = element_text(size = 11.5)))
@@ -270,13 +262,9 @@ coefplot_spec <- function(model, outcome_label, unit_label, file, note) {
 
 coefplot_spec(f_hrs, "Effect on the wife's weekly hours",
   "Change in wife's usual weekly hours",
-  "t2_coefplot_wife_weekly_hours.png",
-  paste0("Neither Republican-majority residence nor housing wealth alone predicts fewer hours; both predict MORE. ",
-         "Only their\ninteraction is negative. n = 2,477,474."))
+  "t2_coefplot_wife_weekly_hours.png")
 
-coefplot_spec(f_lfp2, "Effect on the wife's labour force participation",
-  "Change in probability the wife is in the labour force",
-  "t2_coefplot_wife_lfp.png",
-  paste0("Same specification, participation rather than hours. Coefficients are in probability units ",
-         "(0.01 = 1 pp).\nn = 2,477,474."))
+coefplot_spec(f_lfp2, "Effect on the wife's labor force participation",
+  "Change in probability the wife is in the labor force",
+  "t2_coefplot_wife_lfp.png")
 message("wrote 2 coefficient plots")

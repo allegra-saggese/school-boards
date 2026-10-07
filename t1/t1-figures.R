@@ -20,7 +20,6 @@ base_theme <- theme_minimal(base_size = 13) +
   theme(plot.background  = element_rect(fill = "white", colour = NA),
         panel.background = element_rect(fill = "white", colour = NA),
         plot.title    = element_text(face = "bold", size = 14),
-        plot.subtitle = element_text(colour = "grey30", size = 10.5),
         legend.position = "top", panel.grid.minor = element_blank(),
         strip.text = element_text(face = "bold", size = 11))
 
@@ -50,7 +49,7 @@ save_plot("bkp_pure_descriptive_trends.png", {
     geom_point(aes(shape = era), colour = "#08519C", size = 2.1, fill = "white", stroke = 0.9) +
     scale_shape_manual(values = c("Decennial census" = 21, "ACS" = 19)) +
     facet_wrap(~panel, scales = "free_y", ncol = 2) +
-    labs(x = NULL, y = NULL, shape = "Sample") +
+    labs(title = "Wives' labor market outcomes, 1980-2024", x = "Year", y = NULL, shape = "Sample") +
     base_theme + theme(panel.spacing = unit(1.2, "lines")))
 }, width = 2300, height = 1400)
 
@@ -77,13 +76,8 @@ save_plot("bkp_pure_cliff_ratio_by_year.png", {
     geom_point(colour = "steelblue4", size = 1.8) +
     geom_hline(yintercept = 1, linetype = "dashed", colour = "grey40") +
     geom_vline(xintercept = 2011.5, linetype = "dotted", colour = "grey30") +
-    annotate("text", x = 2012.5, y = max(cliff_yr$hi, na.rm = TRUE),
-             label = "BKP sample ends", hjust = 0, size = 3, colour = "grey30") +
     labs(title = "Threshold avoidance over time",
-         subtitle = paste0("Couples just below the equal-earnings threshold relative to just above ",
-                           "([0.40,0.48) vs (0.52,0.60], ±2pp donut excluded).\n",
-                           "1.0 = no avoidance. Shaded band = bootstrap 95% CI."),
-         x = NULL, y = "Below / above ratio") +
+         x = "Year", y = "Below / above ratio") +
     base_theme)
 }, width = 2000, height = 1200)
 
@@ -111,7 +105,8 @@ if (length(coef_f)) {
   save_plot("bkp_pure_coefficient_plot.png", {
     print(ggplot(cf, aes(x = era_short, y = beta1, colour = spec)) +
       geom_hline(yintercept = 0, colour = "grey60") +
-      geom_hline(aes(yintercept = published, colour = spec), linetype = "dashed", alpha = 0.55) +
+      geom_hline(aes(yintercept = published, colour = spec, linetype = "BKP published"), alpha = 0.55) +
+      scale_linetype_manual(values = c("BKP published" = "dashed"), name = NULL) +
       geom_pointrange(aes(ymin = lo, ymax = hi),
                       position = position_dodge(width = 0.55), size = 0.55) +
       facet_wrap(~dv, scales = "free_y") +
@@ -119,9 +114,7 @@ if (length(coef_f)) {
                                      "Col 2: cubic" = "#4575b4",
                                      "Col 4: cubic + children" = "#1a9850"), name = NULL) +
       labs(title = "Effect of PrWifeEarnsMore, by sample and specification",
-           subtitle = paste0("Points with 95% CIs. Dashed lines = BKP's published estimates.\n",
-                             "The linear specification (red) does not replicate; the cubic does."),
-           x = NULL, y = expression(beta[1])) +
+           x = "Sample", y = expression(beta[1])) +
       base_theme + theme(legend.position = "bottom"))
   }, width = 2200, height = 1200)
 } else {
@@ -136,14 +129,11 @@ save_plot("bkp_pure_beta1_by_year.png", {
     geom_line(colour = "#4575b4", linewidth = 0.9) +
     geom_point(colour = "#4575b4", size = 1.8) +
     geom_hline(yintercept = 0, colour = "grey55") +
-    geom_hline(yintercept = -0.142, linetype = "dashed", colour = "#d73027") +
-    annotate("text", x = min(by_year$YEAR), y = -0.142, vjust = -0.6, hjust = 0,
-             label = "BKP published (-0.142)", size = 3, colour = "#d73027") +
+    geom_hline(aes(yintercept = -0.142, linetype = "BKP published (-0.142)"), colour = "#d73027") +
     geom_vline(xintercept = 2011.5, linetype = "dotted", colour = "grey30") +
+    scale_linetype_manual(values = c("BKP published (-0.142)" = "dashed"), name = NULL) +
     labs(title = "Effect of potential relative income on wife's participation, by year",
-         subtitle = paste0("Separate regression each year, BKP's cubic specification. ",
-                           "Shaded band = 95% CI.\nMore negative = stronger aversion to out-earning."),
-         x = NULL, y = expression(beta[1]~" on PrWifeEarnsMore")) +
+         x = "Year", y = expression(beta[1]~" on PrWifeEarnsMore")) +
     base_theme)
 }, width = 2100, height = 1200)
 

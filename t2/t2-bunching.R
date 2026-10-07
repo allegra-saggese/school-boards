@@ -344,12 +344,12 @@ save_plot("t2_bunching_density_by_quintile.png", {
     annotate("rect", xmin = 0.475, xmax = 0.525, ymin = -Inf, ymax = Inf,
              fill = "grey85", alpha = 0.6) +
     geom_line(linewidth = 0.7) +
-    facet_wrap(~q, nrow = 1, scales = "free_y") +
+    facet_wrap(~q, nrow = 1, scales = "fixed") +
     scale_colour_manual(values = c(Observed = "#111111", `Counterfactual (polynomial)` = "#B2182B")) +
     scale_linetype_manual(values = c(Observed = "solid", `Counterfactual (polynomial)` = "22")) +
     scale_x_continuous(breaks = c(0.3, 0.5, 0.7)) +
     labs(title = "Wife's share of couple earnings, by husband's income quintile",
-         x = "Wife's share of couple labour earnings", y = "% of couples per 0.01 bin",
+         x = "Wife's share of couple labor earnings", y = "% of couples per 0.01 bin",
          colour = NULL, linetype = NULL) +
     base_theme)
 }, width = 2800, height = 1000)
@@ -370,7 +370,7 @@ save_plot("t2_bunching_tau_by_quintile.png", {
     scale_colour_manual(values = c("#111111", "#4D4D4D", "#A6A6A6", "#B2182B", "#FB6A4A")) +
     scale_x_continuous(breaks = 1:5, labels = paste0("Q", 1:5)) +
     labs(title = "Norm wedge implied by bunching, by husband's income",
-         x = "Husband's labour-income quintile", y = "tau-hat = 2 x normalised excess mass",
+         x = "Husband's labor-income quintile", y = "tau-hat = 2 x normalized excess mass",
          colour = NULL, shape = NULL) +
     base_theme + theme(legend.direction = "vertical"))
 }, width = 2000, height = 1350)
@@ -388,7 +388,7 @@ save_plot("t2_bunching_tau_over_time.png", {
     scale_colour_manual(values = c("#6BAED6", "#2171B5", "#08306B")) +
     scale_fill_manual(values = c("#6BAED6", "#2171B5", "#08306B")) +
     labs(title = "Norm wedge implied by bunching over time",
-         x = "Year", y = "tau-hat = 2 x normalised excess mass",
+         x = "Year", y = "tau-hat = 2 x normalized excess mass",
          colour = "Husband's income", fill = "Husband's income", shape = "Sample") +
     base_theme)
 }, width = 2200, height = 1250)

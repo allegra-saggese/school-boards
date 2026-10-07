@@ -38,8 +38,6 @@ base_theme <- theme_minimal(base_size = 13) +
   theme(plot.background  = element_rect(fill = "white", colour = NA),
         panel.background = element_rect(fill = "white", colour = NA),
         plot.title    = element_text(face = "bold", size = 15),
-        plot.subtitle = element_text(colour = "grey30", size = 11),
-        plot.caption  = element_text(colour = "grey45", size = 9, hjust = 0),
         legend.position = "top", panel.grid.minor = element_blank(),
         strip.text = element_text(face = "bold"))
 
@@ -166,10 +164,10 @@ save_plot("t3_hours_earnings_wife_vs_husband.png", {
   mk <- function(x, lab) melt(x, id.vars = "YEAR", variable.name = "spouse",
                               value.name = "v")[, panel := lab][]
   pd <- rbindlist(list(mk(hrs, "Annual market hours"),
-                       mk(ern, "Annual labour earnings (2024 $)"),
+                       mk(ern, "Annual labor earnings (2024 $)"),
                        mk(wg,  "Median hourly wage (2024 $)")))
   pd[, panel := factor(panel, levels = c("Annual market hours",
-                                         "Annual labour earnings (2024 $)",
+                                         "Annual labor earnings (2024 $)",
                                          "Median hourly wage (2024 $)"))]
   pd[, era := ifelse(YEAR %in% c(1980, 1990, 2000), "Decennial census", "ACS")]
   print(ggplot(pd, aes(YEAR, v, colour = spouse)) +
